@@ -47,3 +47,29 @@ po/*~
 
 # RStudio Connect folder
 rsconnect/
+
+# Text files
+*.csv
+*.txt
+*.dat
+
+# Excel
+*.xls*
+*.xlsx*
+
+# SAS
+*.sas7bdat
+*.xport
+
+# Access
+*.mdb
+
+# R Data files
+*.RData
+*.rda
+*.rdata
+*.rda
+
+DataRaw/*
+DataProcessed/*
+!*/ReadMe.md
