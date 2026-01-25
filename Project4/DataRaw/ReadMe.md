@@ -1,4 +1,4 @@
-## Data Availability
+## Data Availability - Raw data
 
 Raw data files are *not* tracked in this repository for privacy/FERPA reasons and are excluded via `.gitignore`.
 
