@@ -1,0 +1,155 @@
+---
+title: "Data exploration"
+author: "Mahfuza Haque Mahi"
+date: "2026-02-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(lme4)
+library(ggplot2)
+raw_dat <- read.csv(here::here("Project0/DataRaw", "Project0_Clean_v2.csv"))
+```
+
+## Initial overview of the dataset
+
+```{r}
+# Check structure
+str(raw_dat)
+head(raw_dat)
+nrow(raw_dat) 
+
+summary(raw_dat)
+glimpse(raw_dat)
+```
+
+## View the Missingness pattern of variables:
+
+```{r}
+naniar::gg_miss_var(raw_dat)
+naniar::vis_miss(raw_dat)
+```
+
+The investigator said the sample.interval variables may be incorrect and may not be used for inference. So, they will be removed them from analysis.
+
+## Data Cleaning and Time calculation - creating the analysis dataset
+
+```{r}
+# -----------------------------
+# Data Manipulation
+# -----------------------------
+
+analysis_dat <- raw_dat %>%
+  select(
+    -Booklet..Sample.interval,
+    -Booklet..Sample.interval.Decimal.Time..mins.,
+    -MEMs..Sample.interval,
+    -MEMs..Sample.interval.Decimal.Time..mins.,
+    -Cortisol..ug.dl.,
+    -DHEA..pg.dl.
+  ) %>%
+  group_by(SubjectID) %>%
+  mutate(
+    dhea_upper_hits = sum(DHEA..nmol.L. == 5.205, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Save IDs to remove (participants with > 2 hits at detection limit)
+removed_info <- analysis_dat %>%
+  filter(dhea_upper_hits > 2) %>%
+  distinct(SubjectID, dhea_upper_hits)
+
+participants_to_remove <- removed_info$SubjectID
+
+# Now apply exclusions + QC rules + timestamp work
+analysis_dat <- analysis_dat %>%
+  filter(!SubjectID %in% participants_to_remove) %>%
+  mutate(
+    Cortisol..nmol.L. = ifelse(Cortisol..nmol.L. > 80, NA, Cortisol..nmol.L.),
+    DHEA..nmol.L.     = ifelse(DHEA..nmol.L. == 5.205, NA, DHEA..nmol.L.)
+  ) %>%
+  select(-dhea_upper_hits) %>%
+  mutate(
+    Booket..Clock.Time = na_if(trimws(Booket..Clock.Time), ""),
+    MEMs..Clock.Time   = na_if(trimws(MEMs..Clock.Time), ""),
+    Sleep.Diary.reported.wake.time = na_if(trimws(Sleep.Diary.reported.wake.time), "")
+  ) %>%
+  mutate(
+    booklet_time = as.POSIXct(
+      paste(Collection.Date, Booket..Clock.Time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    ),
+    cap_time = as.POSIXct(
+      paste(Collection.Date, MEMs..Clock.Time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    ),
+    reported_wake_time = as.POSIXct(
+      paste(Collection.Date, Sleep.Diary.reported.wake.time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    )
+  ) %>%
+  arrange(SubjectID, Collection.Date, Collection.Sample) %>%  # ensure fill goes in the right order
+  group_by(SubjectID, Collection.Date) %>%
+  fill(reported_wake_time, .direction = "down") %>%
+  ungroup() %>%
+  mutate(
+    wake_diff_booklet = as.numeric(difftime(booklet_time, reported_wake_time, units = "mins")),
+    wake_diff_cap     = as.numeric(difftime(cap_time,     reported_wake_time, units = "mins")),
+    diff_booklet_cap  = as.numeric(difftime(booklet_time, cap_time,           units = "mins"))
+  )
+```
+
+Data were cleaned and processed prior to analysis to remove timing variables deemed unreliable, exclude biologically implausible cortisol values (>80 nmol/L), and handle DHEA measurements at the assay detection limit. Participants with repeated DHEA values at the detection limit were excluded to avoid distortion of diurnal hormone patterns. These preprocessing steps ensured that the analytic dataset reflected valid measurements and aligned with the investigator’s prespecified quality-control criteria.
+
+## Table 1
+Table 1 is constructed using the analytic dataset after application of all prespecified quality-control and exclusion criteria, ensuring consistency between descriptive summaries and inferential analyses.
+```{r}
+# --- Minimal cleaning: make group + indicators readable ---
+df_tab <- analysis_dat %>%
+  mutate(
+    # Grouping variable
+    Collection.Sample = factor(
+      Collection.Sample,
+      levels = 1:4,
+      labels = c("Waking", "+30 min", "Lunch", "+10 hours")
+    ),
+
+
+    # Time availability indicators (for missingness reporting)
+    booklet_time_avail = ifelse(is.na(Booket..Clock.Time), "No", "Yes"),
+    mems_time_avail    = ifelse(is.na(MEMs..Clock.Time), "No", "Yes"),
+    wake_time_avail    = ifelse(is.na(Sleep.Diary.reported.wake.time), "No", "Yes"),
+
+  ) %>%
+  mutate(
+    booklet_time_avail = factor(booklet_time_avail, levels = c("Yes","No")),
+    mems_time_avail    = factor(mems_time_avail,    levels = c("Yes","No")),
+    wake_time_avail    = factor(wake_time_avail,    levels = c("Yes","No"))
+  )
+
+# --- nice labels in the printed table ---
+label(df_tab$DAYNUMB) <- "Study day (1–3)"
+label(df_tab$booklet_time_avail) <- "Booklet time recorded"
+label(df_tab$mems_time_avail) <- "MEMS cap time recorded"
+label(df_tab$wake_time_avail) <- "Sleep diary wake time recorded"
+label(df_tab$Cortisol..nmol.L.) <- "Cortisol (nmol/L)"
+label(df_tab$DHEA..nmol.L.) <- "DHEA (nmol/L)"
+
+
+# --- Table 1: overall + by sample type ---
+table1(
+  ~ booklet_time_avail + mems_time_avail + wake_time_avail +
+    Cortisol..nmol.L. + DHEA..nmol.L.
+  | Collection.Sample,
+  data = df_tab,
+  caption = "Table 1. Hormone measurements and timing data availability by collection time point."
+)
+```
+
+Table 1 is stratified by collection sample (waking, +30 minutes, lunch, and +10 hours) because timing accuracy, missingness, protocol adherence, and hormone concentrations are expected to vary systematically across the day. Stratifying by sample preserves the biological interpretation of cortisol and DHEA measurements and allows clear assessment of protocol performance at each scheduled collection time.
