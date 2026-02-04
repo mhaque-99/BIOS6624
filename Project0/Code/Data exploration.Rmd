@@ -1,5 +1,5 @@
 ---
-title: "Data exploration"
+title: "Project0: Data exploration"
 author: "Mahfuza Haque Mahi"
 date: "2026-02-01"
 output: html_document
@@ -35,14 +35,18 @@ naniar::vis_miss(raw_dat)
 
 The investigator said the sample.interval variables may be incorrect and may not be used for inference. So, they will be removed them from analysis.
 
-## Data Cleaning and Time calculation - creating the analysis dataset
+
+## Data Cleaning and construction of the analytic dataset
 
 ```{r}
 # -----------------------------
-# Data Manipulation
+# Construct Analytic Dataset
 # -----------------------------
 
 analysis_dat <- raw_dat %>%
+  
+  # Remove sample interval variables (deemed unreliable by investigator)
+  # and hormone measures in alternative units to avoid redundancy
   select(
     -Booklet..Sample.interval,
     -Booklet..Sample.interval.Decimal.Time..mins.,
@@ -51,32 +55,50 @@ analysis_dat <- raw_dat %>%
     -Cortisol..ug.dl.,
     -DHEA..pg.dl.
   ) %>%
+  
+  # Identify participants with repeated DHEA values at the assay
+  # upper detection limit (5.205 nmol/L)
   group_by(SubjectID) %>%
   mutate(
     dhea_upper_hits = sum(DHEA..nmol.L. == 5.205, na.rm = TRUE)
   ) %>%
   ungroup()
 
-# Save IDs to remove (participants with > 2 hits at detection limit)
+# Identify participants to exclude:
+# participants with more than two DHEA values at the detection limit
 removed_info <- analysis_dat %>%
   filter(dhea_upper_hits > 2) %>%
   distinct(SubjectID, dhea_upper_hits)
 
 participants_to_remove <- removed_info$SubjectID
 
-# Now apply exclusions + QC rules + timestamp work
+# Apply participant-level exclusions and hormone quality-control rules
 analysis_dat <- analysis_dat %>%
+  
+  # Exclude flagged participants entirely
   filter(!SubjectID %in% participants_to_remove) %>%
+  
+  # Apply biologically motivated hormone exclusions:
+  #   - Cortisol > 80 nmol/L treated as implausible (set to missing)
+  #   - DHEA at detection limit removed to avoid flattening diurnal patterns
   mutate(
     Cortisol..nmol.L. = ifelse(Cortisol..nmol.L. > 80, NA, Cortisol..nmol.L.),
     DHEA..nmol.L.     = ifelse(DHEA..nmol.L. == 5.205, NA, DHEA..nmol.L.)
   ) %>%
+  
+  # Remove temporary detection-limit counter
   select(-dhea_upper_hits) %>%
+  
+  # Clean clock-time variables:
+  # trim whitespace and convert empty strings to missing values
   mutate(
     Booket..Clock.Time = na_if(trimws(Booket..Clock.Time), ""),
     MEMs..Clock.Time   = na_if(trimws(MEMs..Clock.Time), ""),
     Sleep.Diary.reported.wake.time = na_if(trimws(Sleep.Diary.reported.wake.time), "")
   ) %>%
+  
+  # Convert clock-time variables into POSIXct datetimes by
+  # combining with the collection date
   mutate(
     booklet_time = as.POSIXct(
       paste(Collection.Date, Booket..Clock.Time),
@@ -94,21 +116,38 @@ analysis_dat <- analysis_dat %>%
       tz = "America/Denver"
     )
   ) %>%
-  arrange(SubjectID, Collection.Date, Collection.Sample) %>%  # ensure fill goes in the right order
+  
+  # Order observations to ensure correct propagation of wake time
+  arrange(SubjectID, Collection.Date, Collection.Sample) %>%
+  
+  # Carry forward reported wake time within each subject and collection day
   group_by(SubjectID, Collection.Date) %>%
   fill(reported_wake_time, .direction = "down") %>%
   ungroup() %>%
+  
+  # Compute derived timing variables (in minutes):
+  #   - Time since waking using booklet time
+  #   - Time since waking using MEMS cap time
+  #   - Difference between booklet and MEMS times (agreement metric)
   mutate(
-    wake_diff_booklet = as.numeric(difftime(booklet_time, reported_wake_time, units = "mins")),
-    wake_diff_cap     = as.numeric(difftime(cap_time,     reported_wake_time, units = "mins")),
-    diff_booklet_cap  = as.numeric(difftime(booklet_time, cap_time,           units = "mins"))
+    wake_diff_booklet = as.numeric(
+      difftime(booklet_time, reported_wake_time, units = "mins")
+    ),
+    wake_diff_cap = as.numeric(
+      difftime(cap_time, reported_wake_time, units = "mins")
+    ),
+    diff_booklet_cap = as.numeric(
+      difftime(booklet_time, cap_time, units = "mins")
+    )
   )
 ```
 
 Data were cleaned and processed prior to analysis to remove timing variables deemed unreliable, exclude biologically implausible cortisol values (>80 nmol/L), and handle DHEA measurements at the assay detection limit. Participants with repeated DHEA values at the detection limit were excluded to avoid distortion of diurnal hormone patterns. These preprocessing steps ensured that the analytic dataset reflected valid measurements and aligned with the investigator’s prespecified quality-control criteria.
 
 ## Table 1
+
 Table 1 is constructed using the analytic dataset after application of all prespecified quality-control and exclusion criteria, ensuring consistency between descriptive summaries and inferential analyses.
+
 ```{r}
 # --- Minimal cleaning: make group + indicators readable ---
 df_tab <- analysis_dat %>%
@@ -153,3 +192,44 @@ table1(
 ```
 
 Table 1 is stratified by collection sample (waking, +30 minutes, lunch, and +10 hours) because timing accuracy, missingness, protocol adherence, and hormone concentrations are expected to vary systematically across the day. Stratifying by sample preserves the biological interpretation of cortisol and DHEA measurements and allows clear assessment of protocol performance at each scheduled collection time.
+
+### Looking at the outcome variables for question 3
+
+```{r}
+# Raw cortisol
+ggplot(analysis_dat, aes(x = Cortisol..nmol.L.)) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black") +
+  labs(
+    title = "Histogram of raw cortisol values",
+    x = "Cortisol (nmol/L)",
+    y = "Count"
+  )
+
+# Log cortisol
+ggplot(analysis_dat, aes(x = log(Cortisol..nmol.L.))) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black") +
+  labs(
+    title = "Histogram of log-transformed cortisol values",
+    x = "log(Cortisol)",
+    y = "Count"
+  )
+
+# Raw DHEA
+ggplot(analysis_dat, aes(x = DHEA..nmol.L.)) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black") +
+  labs(
+    title = "Histogram of raw DHEA values",
+    x = "DHEA (nmol/L)",
+    y = "Count"
+  )
+
+# Log DHEA
+ggplot(analysis_dat, aes(x = log(DHEA..nmol.L.))) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black") +
+  labs(
+    title = "Histogram of log-transformed DHEA values",
+    x = "log(DHEA)",
+    y = "Count"
+  )
+
+```

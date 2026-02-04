@@ -1,0 +1,799 @@
+---
+output:
+  html_document:
+  pdf_document: default
+  word_document: default
+header-includes: \usepackage{float}
+always_allow_html: true
+---
+
+<!-- Title here: -->
+**Feasibility and Timing Accuracy of a Novel Filter Paper–Based Saliva Collection Method for Assessing Diurnal Cortisol and DHEA**
+
+<!-- Name here: -->
+Mahfuza Haque Mahi[^1]
+
+[^1]: Biostatistics PhD Student, Colorado School of Public Health, University of Colorado Anschutz Medical Campus, Aurora, CO
+
+
+### Introduction
+
+This project analyzes data from a feasibility study evaluating a novel saliva collection device, the Saliva Procurement and Integrated Testing (SPIT) booklet, for measuring diurnal patterns of salivary cortisol and dehydroepiandrosterone (DHEA) in free-living conditions. The dataset provided by the investigator includes repeated saliva samples from 31 healthy adult participants collected over three consecutive days, with up to four samples per day per participant. Samples were scheduled at waking, approximately 30 minutes after waking, before lunch, and approximately 10 hours after waking. For each sample, timing information was recorded using three sources: participant-recorded clock time in the booklet, electronically recorded clock time from a MEMS monitoring cap, and self-reported wake time from a sleep diary. Salivary cortisol and DHEA concentrations were measured in nmol/L, along with indicators of collection day and sample order.
+
+The scientific objective of the study is to evaluate whether the SPIT booklet provides accurate sampling times and hormone measurements suitable for characterizing diurnal hormone patterns. This report focuses on three related analytic aims. First, agreement between booklet-recorded and MEMS-recorded sampling times is assessed. Second, adherence to the protocol-specified sampling schedule, particularly the +30-minute and +10-hour post-waking collections, is evaluated. Third, changes in cortisol and DHEA concentrations over time since waking are examined.
+
+These objectives are translated into testable statistical hypotheses. Agreement is assessed by testing whether booklet-recorded minutes since waking are linearly related to MEMS-recorded minutes since waking with an intercept of zero and a slope of one. Protocol adherence is evaluated by estimating the proportion of samples collected within predefined $\pm7.5$ minute and $\pm15$ minute windows around scheduled targets. Diurnal hormone patterns are examined by testing for changes in cortisol and DHEA from waking to 30 minutes post-waking and for subsequent rates of change after 30 minutes post-waking using mixed-effects regression models that account for repeated measures within participants.
+
+### Methods
+
+#### Data Management and Cleaning
+
+
+Data management and cleaning were performed prior to analysis in consultation with the investigator and followed prespecified quality-control criteria. Sample interval variables derived from booklet and MEMS recorded times were excluded because their accuracy could not be verified. Time since waking was instead calculated by combining the collection date with recorded clock times and subtracting the sleep diary-reported wake time.
+
+Hormone measurements reported in alternative units (µg/dL for cortisol and pg/dL for DHEA) were excluded to avoid redundancy. Cortisol values greater than 80 nmol/L were treated as biologically implausible laboratory values and set to missing, while values greater than 26 nmol/L were retained as biologically possible. DHEA measurements equal to the assay upper detection limit (5.205 nmol/L) were excluded because these represent censored observations that could obscure diurnal patterns. In addition, participants with more than two DHEA measurements at the detection limit across all samples were excluded from analyses examining diurnal hormone change, as advised by the investigator.
+
+Missing timing data were retained for descriptive summaries. Missing MEMS times could occur due to device malfunction or participant noncompliance, whereas missing booklet or wake times could occur due to incomplete recording. Derived variables included minutes since waking based on booklet times, minutes since waking based on MEMS times, and the difference between booklet and MEMS recorded sampling times.
+
+#### Preliminary Data Analysis
+
+Preliminary analyses included descriptive summaries of sample counts, participant counts, and missing data patterns across collection times. Graphical methods were used to explore agreement between booklet and MEMS recorded times and to visualize hormone concentrations over time since waking. These exploratory analyses were used to assess data quality and guide model specification but were not used for formal inference.
+
+#### Statistical Analysis
+
+#### Agreement Between Booklet and MEMS Sampling Times
+
+
+Agreement between booklet-recorded and MEMS-recorded sampling times was evaluated among samples with non-missing time since waking values for both measures. Graphical agreement was assessed using scatter plots and Bland–Altman plots. Formal statistical assessment was conducted using a linear mixed-effects model with booklet-recorded minutes since waking as the outcome and MEMS-recorded minutes since waking as the primary explanatory variable. A random intercept for participant was included to account for within-subject correlation due to repeated measurements.
+
+Statistical hypotheses were evaluated by testing fixed-effect parameters from the mixed-effects model. Perfect agreement was defined as an intercept equal to zero and a slope equal to one. Wald-based hypothesis tests and confidence intervals were used to assess whether the intercept differed from zero and whether the slope differed from one. Statistical significance was evaluated at the 0.05 level.
+
+#### Protocol Adherence to Scheduled Sampling Times
+
+
+Protocol adherence was evaluated for the $+30$ minute and $+10$ hour post-waking samples. Adherence was defined as collection within predefined $\pm7.5$-minute and $\pm15$-minute windows around the scheduled target times, using sleep diary reported wake time as the reference. Adherence was assessed separately using booklet recorded times and MEMS recorded times. Device agreement was defined as the absolute difference between booklet and MEMS recorded sampling times. Adherence and agreement metrics were summarized descriptively, as the primary goal was to characterize feasibility rather than conduct formal hypothesis testing.
+
+#### Diurnal Changes in Cortisol and DHEA
+
+
+Diurnal changes in cortisol and DHEA were examined using linear mixed-effects regression models. Hormone concentrations were log-transformed prior to analysis to address right-skewness and to model proportional changes over time. Model diagnostics, including histograms of raw and log-transformed hormone concentrations and residual assessments, are provided in Appendix A. Time since waking was modeled using a piecewise linear specification with a knot at 30 minutes after waking, allowing separate estimation of early post-waking change and subsequent diurnal change. Fixed effects included time before 30 minutes and time after 30 minutes, and a random intercept for participant was included to account for repeated measurements.
+
+Hypotheses regarding early post-waking change and post–30 minute rates of change were evaluated using Wald tests of the corresponding fixed-effect coefficients. Estimates and 95% confidence intervals from log-scale models were back-transformed to obtain percent changes. Statistical significance was assessed at the 0.05 level without adjustment for multiple comparisons, as analyses were prespecified and limited in scope.
+
+#### Statistical Software
+
+All analyses were conducted using R version 4.3.1 (2023-06-16 ucrt).
+
+### Results 
+
+```{r setup, include=FALSE, warning = F, message = F}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(Hmisc)
+library(lubridate)
+library(table1)
+library(tidyr)
+library(lme4)
+library(ggplot2)
+library(lmerTest)
+library(knitr)
+library(kableExtra)
+library(patchwork)
+library(broom.mixed)
+library(emmeans)
+raw_dat <- read.csv(here::here("Project0/DataRaw", "Project0_Clean_v2.csv"))
+```
+
+```{r, echo = F}
+# -----------------------------
+# Analytic dataset
+# -----------------------------
+
+analysis_dat <- raw_dat %>%
+  
+  # Remove sample interval variables (deemed unreliable by investigator)
+  # and hormone measures in alternative units to avoid redundancy
+  select(
+    -Booklet..Sample.interval,
+    -Booklet..Sample.interval.Decimal.Time..mins.,
+    -MEMs..Sample.interval,
+    -MEMs..Sample.interval.Decimal.Time..mins.,
+    -Cortisol..ug.dl.,
+    -DHEA..pg.dl.
+  ) %>%
+  
+  # Identify participants with repeated DHEA values at the assay
+  # upper detection limit (5.205 nmol/L)
+  group_by(SubjectID) %>%
+  mutate(
+    dhea_upper_hits = sum(DHEA..nmol.L. == 5.205, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# Identify participants to exclude:
+# participants with more than two DHEA values at the detection limit
+removed_info <- analysis_dat %>%
+  filter(dhea_upper_hits > 2) %>%
+  distinct(SubjectID, dhea_upper_hits)
+
+participants_to_remove <- removed_info$SubjectID
+
+# Apply participant-level exclusions and hormone quality-control rules
+analysis_dat <- analysis_dat %>%
+  
+  # Exclude flagged participants entirely
+  filter(!SubjectID %in% participants_to_remove) %>%
+  
+  # Apply biologically motivated hormone exclusions:
+  #   - Cortisol > 80 nmol/L treated as implausible (set to missing)
+  #   - DHEA at detection limit removed to avoid flattening diurnal patterns
+  mutate(
+    Cortisol..nmol.L. = ifelse(Cortisol..nmol.L. > 80, NA, Cortisol..nmol.L.),
+    DHEA..nmol.L.     = ifelse(DHEA..nmol.L. == 5.205, NA, DHEA..nmol.L.)
+  ) %>%
+  
+  # Remove temporary detection-limit counter
+  select(-dhea_upper_hits) %>%
+  
+  # Clean clock-time variables:
+  # trim whitespace and convert empty strings to missing values
+  mutate(
+    Booket..Clock.Time = na_if(trimws(Booket..Clock.Time), ""),
+    MEMs..Clock.Time   = na_if(trimws(MEMs..Clock.Time), ""),
+    Sleep.Diary.reported.wake.time = na_if(trimws(Sleep.Diary.reported.wake.time), "")
+  ) %>%
+  
+  # Convert clock-time variables into POSIXct datetimes by
+  # combining with the collection date
+  mutate(
+    booklet_time = as.POSIXct(
+      paste(Collection.Date, Booket..Clock.Time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    ),
+    cap_time = as.POSIXct(
+      paste(Collection.Date, MEMs..Clock.Time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    ),
+    reported_wake_time = as.POSIXct(
+      paste(Collection.Date, Sleep.Diary.reported.wake.time),
+      format = "%m/%d/%Y %H:%M",
+      tz = "America/Denver"
+    )
+  ) %>%
+  
+  # Order observations to ensure correct propagation of wake time
+  arrange(SubjectID, Collection.Date, Collection.Sample) %>%
+  
+  # Carry forward reported wake time within each subject and collection day
+  group_by(SubjectID, Collection.Date) %>%
+  fill(reported_wake_time, .direction = "down") %>%
+  ungroup() %>%
+  
+  # Compute derived timing variables (in minutes):
+  #   - Time since waking using booklet time
+  #   - Time since waking using MEMS cap time
+  #   - Difference between booklet and MEMS times (agreement metric)
+  mutate(
+    wake_diff_booklet = as.numeric(
+      difftime(booklet_time, reported_wake_time, units = "mins")
+    ),
+    wake_diff_cap = as.numeric(
+      difftime(cap_time, reported_wake_time, units = "mins")
+    ),
+    diff_booklet_cap = as.numeric(
+      difftime(booklet_time, cap_time, units = "mins")
+    )
+  )
+```
+
+**Descriptive statistics (Table 1)**
+
+Table 1 below summarizes the availability of timing data and the distribution of cortisol and DHEA measurements across scheduled collection time points and overall.
+
+```{r, echo = F}
+# -----------------------------
+# Table 1 (analytic dataset)
+# -----------------------------
+# --- Make group + indicators readable ---
+df_tab <- analysis_dat %>%
+  mutate(
+    # Grouping variable
+    Collection.Sample = factor(
+      Collection.Sample,
+      levels = 1:4,
+      labels = c("Waking", "+30 min", "Lunch", "+10 hours")
+    ),
+
+
+    # Time availability indicators (for missingness reporting)
+    booklet_time_avail = ifelse(is.na(Booket..Clock.Time), "No", "Yes"),
+    mems_time_avail    = ifelse(is.na(MEMs..Clock.Time), "No", "Yes"),
+    wake_time_avail    = ifelse(is.na(Sleep.Diary.reported.wake.time), "No", "Yes"),
+
+  ) %>%
+  mutate(
+    booklet_time_avail = factor(booklet_time_avail, levels = c("Yes","No")),
+    mems_time_avail    = factor(mems_time_avail,    levels = c("Yes","No")),
+    wake_time_avail    = factor(wake_time_avail,    levels = c("Yes","No"))
+  )
+
+# --- nice labels in the printed table ---
+label(df_tab$DAYNUMB) <- "Study day (1–3)"
+label(df_tab$booklet_time_avail) <- "Booklet time recorded"
+label(df_tab$mems_time_avail) <- "MEMS cap time recorded"
+label(df_tab$wake_time_avail) <- "Sleep diary wake time recorded"
+label(df_tab$Cortisol..nmol.L.) <- "Cortisol (nmol/L)"
+label(df_tab$DHEA..nmol.L.) <- "DHEA (nmol/L)"
+
+
+# --- Table 1: overall + by sample type ---
+table1 <- table1(
+  ~ booklet_time_avail + mems_time_avail + wake_time_avail +
+    Cortisol..nmol.L. + DHEA..nmol.L.
+  | Collection.Sample,
+  data = df_tab
+)
+
+# Print nicely formatted Table 1
+table1 %>%
+  kable(
+  caption = "Table 1. Hormone measurements and timing data availability by collection time point."
+  ) %>%
+  kable_styling(full_width = FALSE, position = "center")
+
+```
+
+Timing data were largely complete. Booklet recorded times were available for over 90% of samples overall, while MEMS recorded times were available for more than 80%, with slightly higher missingness at the $+30$ minute timepoint. Cortisol and DHEA concentrations varied across collection time points, with higher concentrations at waking and $+30$ minutes followed by lower levels at lunch and $+10$ hours, and hormone measurements were missing in fewer than 3% of samples across all timepoints.
+
+**Agreement Between Booklet-Recorded and MEMS-Recorded Sampling Times**
+
+```{r, echo=FALSE}
+# -----------------------------
+# Q1 analytic dataset:
+# require both booklet & cap time since wake
+# -----------------------------
+q1_dat <- analysis_dat %>%
+  filter(!is.na(wake_diff_booklet), !is.na(wake_diff_cap)) %>%
+  mutate(
+    Collection.Sample = factor(
+      Collection.Sample,
+      levels = 1:4,
+      labels = c("Waking", "+30 min", "Lunch", "+10 hours")
+    )
+  )
+
+# -----------------------------
+# Plot: booklet vs cap time since wake
+# -----------------------------
+q1_dat <- q1_dat %>%
+  mutate(
+    diff_booklet_cap = wake_diff_booklet - wake_diff_cap,
+    mean_booklet_cap = (wake_diff_booklet + wake_diff_cap) / 2
+  )
+
+# Limits of agreement (overall)
+loa <- q1_dat %>%
+  summarise(
+    md = mean(diff_booklet_cap, na.rm = TRUE),
+    sd = sd(diff_booklet_cap, na.rm = TRUE),
+    upper = md + 1.96 * sd,
+    lower = md - 1.96 * sd
+  )
+
+# -----------------------------
+# (A) Scatter plot
+# -----------------------------
+p_scatter <- ggplot(q1_dat, aes(x = wake_diff_cap, y = wake_diff_booklet, color = Collection.Sample)) +
+  geom_point(alpha = 0.7, na.rm = TRUE) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  labs(
+    title = "Scatter plot",
+    x = "MEMS minutes since waking",
+    y = "Booklet minutes since waking",
+    color = "Collection sample"
+  ) +
+  theme_minimal()
+
+# -----------------------------
+# (B) Bland–Altman plot
+# -----------------------------
+p_ba <- ggplot(q1_dat, aes(x = mean_booklet_cap, y = diff_booklet_cap, color = Collection.Sample)) +
+  geom_point(alpha = 0.7, na.rm = TRUE) +
+  geom_hline(yintercept = loa$md) +
+  geom_hline(yintercept = loa$upper, linetype = 2) +
+  geom_hline(yintercept = loa$lower, linetype = 2) +
+  labs(
+    title = "Bland–Altman",
+    x = "Mean minutes since waking",
+    y = "Difference (Booklet − MEMS, min)",
+    color = "Collection sample"
+  ) +
+  theme_minimal() +
+  guides(color = "none")  # legend will be collected from the left plot
+
+# -----------------------------
+# Side-by-side layout
+# -----------------------------
+(p_scatter | p_ba) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    title = "Figure 1: Agreement between booklet and MEMS-recorded sampling times",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "bottom"
+    )
+  ) 
+```
+
+Figure 1 shows agreement between booklet recorded and MEMS recorded sampling times. In the scatter plot (Panel A), points lie close to the line of identity across all collection times, indicating strong proportional agreement between the two measures. Agreement appears tight near waking and the $+30$ minute sample, with slightly greater dispersion at later time points, particularly the $+10$ hour collection.
+
+The Bland-Altman plot (Panel B) demonstrates minimal overall bias, with the mean difference close to zero, but increasing variability as time since waking increases. This pattern suggests that while booklet and MEMS times generally agree, discrepancies are more variable later in the day.
+
+Together, these graphical assessments suggest strong proportional agreement between booklet and MEMS recorded times with minimal systematic bias, supporting the use of regression based methods to formally quantify agreement while accounting for repeated measurements within participants.
+
+Guided by the strong linear relationship observed in Figure 1, agreement was formally assessed using a linear mixed-effects model with subject-specific random intercepts. Table 2 below presents results from a linear mixed-effects model evaluating the agreement between booklet recorded and MEMS recorded minutes since waking, accounting for repeated measurements within subjects.
+
+```{r, echo = F}
+# -----------------------------
+# LMM: agreement model
+# Outcome: booklet mins since wake
+# Predictor: cap mins since wake
+# Random intercept: SubjectID
+# Perfect agreement => intercept=0, slope=1
+# -----------------------------
+rq1_agreement <- lmer(
+  wake_diff_booklet ~ wake_diff_cap + (1 | SubjectID),
+  data = q1_dat,
+  REML = TRUE
+)
+##----Extract model results--------
+rq1_tab <- tidy(
+  rq1_agreement,
+  effects = "fixed",
+  conf.int = TRUE
+) %>%
+  mutate(
+    Term = case_when(
+      term == "(Intercept)" ~ "Intercept",
+      term == "wake_diff_cap" ~ "MEMS minutes since waking"
+    ),
+    Estimate = round(estimate, 3),
+    `Std. Error` = round(std.error, 3),
+    `95% CI (Lower)` = round(conf.low, 3),
+    `95% CI (Upper)` = round(conf.high, 3),
+    `p-value` = signif(p.value, 3)
+  ) %>%
+  select(
+    Term,
+    Estimate,
+    `Std. Error`,
+    `95% CI (Lower)`,
+    `95% CI (Upper)`,
+    `p-value`
+  )
+
+##------Create the formatted table-------
+rq1_tab %>%
+  kable(
+    caption = "Table 2. Linear mixed-effects model assessing agreement between booklet and MEMS recorded sampling times.",
+    align = "lccccc",
+    booktabs = TRUE
+  ) %>%
+  kable_styling(full_width = FALSE, position = "center") %>%
+  footnote(
+    general = paste(
+      "Outcome: booklet-recorded minutes since waking.",
+      "Predictor: MEMS-recorded minutes since waking.",
+      "Model includes a random intercept for subject.",
+      "N =", nrow(q1_dat), "observations from",
+      length(unique(q1_dat$SubjectID)), "subjects."
+    )
+  )
+```
+
+Booklet recorded sampling times were strongly associated with MEMS recorded times (slope = 0.99, 95% CI: 0.98-1.01; p < 0.001), indicating near proportional agreement between the two methods. The intercept differed modestly from zero (-6.7 minutes, 95% CI: -12.6 to -0.8), suggesting a small systematic tendency for booklet times to be recorded slightly earlier than MEMS times. Overall, these results support good agreement between devices with minimal bias at the population level.
+
+**Adherence to Scheduled Saliva Collection Times (+30 Minutes and +10 Hours)**
+
+Given the strong proportional agreement and minimal systematic bias between booklet and MEMS times, MEMS-recorded times were considered an appropriate reference for evaluating protocol adherence. This analysis focuses on whether participants collected samples at the required +30 minute and +10 hour timepoints. Table 3 below summarizes device agreement between booklet and MEMS recorded sampling times and participant adherence to the scheduled +30 minute and +10 hour saliva collection windows.
+
+```{r, echo = F}
+# ============================================================
+# Q2. Adherence to scheduled sampling times
+# Targets:
+#   sample 2: 30 min after waking
+#   sample 4: 600 min (10 hours) after waking
+# Windows:
+#   within 7.5 min and within 15 min of target
+# Time since wake comes from sleep diary wake time.
+# ============================================================
+
+# Overall agreement within windows: booklet vs cap (all samples)
+q2_agree_overall <- analysis_dat %>%
+  summarise(
+    n = sum(!is.na(diff_booklet_cap)),
+    n_missing = sum(is.na(diff_booklet_cap)),
+    perc_within_7.5 = mean(abs(diff_booklet_cap) <= 7.5, na.rm = TRUE) * 100,
+    perc_within_15  = mean(abs(diff_booklet_cap) <= 15,  na.rm = TRUE) * 100
+  )
+
+#q2_agree_overall
+
+# Agreement within windows, restricted to +30 and +10h samples
+q2_agree_30_10h <- analysis_dat %>%
+  filter(Collection.Sample %in% c(2, 4)) %>%
+  group_by(Collection.Sample) %>%
+  summarise(
+    n = sum(!is.na(diff_booklet_cap)),
+    n_missing = sum(is.na(diff_booklet_cap)),
+    perc_within_7.5 = mean(abs(diff_booklet_cap) <= 7.5, na.rm = TRUE) * 100,
+    perc_within_15  = mean(abs(diff_booklet_cap) <= 15,  na.rm = TRUE) * 100,
+    .groups = "drop"
+  )
+
+#q2_agree_30_10h
+
+
+# -----------------------------
+# DEVICE AGREEMENT: overall + (+30, +10h)
+# -----------------------------
+agreement_overall <- q2_agree_overall %>%
+  mutate(timepoint = "Overall") %>%
+  select(timepoint, n, n_missing, perc_within_7.5, perc_within_15) %>%
+  rename(
+    agree_n       = n,
+    agree_missing = n_missing,
+    agree_7p5     = perc_within_7.5,
+    agree_15      = perc_within_15
+  )
+
+agreement_by_tp <- q2_agree_30_10h %>%
+  mutate(
+    timepoint = case_when(
+      Collection.Sample == 2 ~ "+30 min",
+      Collection.Sample == 4 ~ "+10 hours"
+    )
+  ) %>%
+  select(timepoint, n, n_missing, perc_within_7.5, perc_within_15) %>%
+  rename(
+    agree_n       = n,
+    agree_missing = n_missing,
+    agree_7p5     = perc_within_7.5,
+    agree_15      = perc_within_15
+  )
+
+agreement_tbl <- bind_rows(agreement_overall, agreement_by_tp)
+
+# -----------------------------
+# PROTOCOL ADHERENCE: only for (+30, +10h)
+# -----------------------------
+adherence_tbl <- analysis_dat %>%
+  filter(Collection.Sample %in% c(2, 4)) %>%
+  mutate(
+    timepoint   = if_else(Collection.Sample == 2, "+30 min", "+10 hours"),
+    target_mins = if_else(Collection.Sample == 2, 30, 600),
+    dev_booklet = wake_diff_booklet - target_mins,
+    dev_cap     = wake_diff_cap     - target_mins
+  ) %>%
+  summarise(
+    booklet_7p5 = mean(abs(dev_booklet) <= 7.5, na.rm = TRUE) * 100,
+    booklet_15  = mean(abs(dev_booklet) <= 15,  na.rm = TRUE) * 100,
+    cap_7p5     = mean(abs(dev_cap)     <= 7.5, na.rm = TRUE) * 100,
+    cap_15      = mean(abs(dev_cap)     <= 15,  na.rm = TRUE) * 100,
+    .by = timepoint
+  )
+
+# -----------------------------
+# MERGE + add NA for Overall adherence
+# -----------------------------
+combined_tbl <- agreement_tbl %>%
+  left_join(adherence_tbl, by = "timepoint") %>%
+  mutate(across(where(is.numeric), ~ round(.x, 1))) %>%
+  mutate(
+    booklet_7p5 = if_else(timepoint == "Overall", NA_real_, booklet_7p5),
+    booklet_15  = if_else(timepoint == "Overall", NA_real_, booklet_15),
+    cap_7p5     = if_else(timepoint == "Overall", NA_real_, cap_7p5),
+    cap_15      = if_else(timepoint == "Overall", NA_real_, cap_15)
+  ) %>%
+  arrange(match(timepoint, c("Overall", "+30 min", "+10 hours")))
+
+# Replace NAs in adherence columns with an em dash for nicer display
+combined_tbl_disp <- combined_tbl %>%
+  mutate(across(c(booklet_7p5, booklet_15, cap_7p5, cap_15),
+                ~ ifelse(is.na(.x), "—", sprintf("%.1f", .x)))) %>%
+  mutate(across(c(agree_7p5, agree_15), ~ sprintf("%.1f", .x)))  # keep as 1 decimal
+
+# -----------------------------
+# kable with column spanners
+# -----------------------------
+combined_tbl_disp %>%
+  select(
+    timepoint,
+    agree_n, agree_missing, agree_7p5, agree_15,
+    booklet_7p5, booklet_15, cap_7p5, cap_15
+  ) %>%
+  kable(
+    #format = "latex",    # change to "latex" for PDF
+    #booktabs = TRUE,
+    caption = "Table 3. Device agreement (booklet vs MEMS) and protocol adherence (relative to scheduled target) at scheduled collection times.",
+    col.names = c(
+      "Collection time",
+      "N", "Missing", "±7.5 min (%)", "±15 min (%)",
+      "Booklet ±7.5 (%)", "Booklet ±15 (%)", "MEMS ±7.5 (%)", "MEMS ±15 (%)"
+    ),
+    align = c("l", rep("c", 8))
+  ) %>%
+  add_header_above(c(
+    " " = 1,
+    "Device agreement (Booklet vs MEMS)" = 4,
+    "Protocol adherence (relative to scheduled target)" = 4
+  )) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "condensed")
+  ) %>%
+  footnote(
+    general = paste(
+      "Device agreement is defined as the absolute difference between booklet- and MEMS-recorded sampling times.",
+      "Protocol adherence is defined as collection within ±7.5 or ±15 minutes of the scheduled target time",
+      "(30 minutes or 600 minutes after waking), using sleep diary–reported wake time as the reference.",
+      "Adherence is not defined for the Overall row because it pools multiple scheduled timepoints."
+    ),
+    general_title = "Note: "
+  )
+
+```
+
+Overall agreement between booklet- and MEMS-recorded sampling times was moderate, with 67.5% of non-missing samples within $\pm7.5$ minutes and 82.1% within $\pm15$ minutes. 
+
+Adherence to the study protocol varied by collection time and measurement source. For the $+30$-minute sample, adherence was generally high, with 78.6% of booklet-recorded times and 52.9% of MEMS-recorded times within $\pm7.5$ minutes of the scheduled target, increasing to 90.5% and 70.6%, respectively, within $\pm15$ minutes. In contrast, adherence declined substantially for the +10 hour sample, particularly when assessed using MEMS data, with only 33.8% of samples within $\pm7.5$ minutes and 41.2% within $\pm15$ minutes. These findings indicate that participants adhered more closely to the early post-waking collection than the late-day collection and that self-reported booklet times tended to overestimate adherence relative to electronically monitored times.
+
+**Diurnal Changes in Cortisol and DHEA Over Time Since Waking**
+
+Having established that booklet recorded times generally agree with MEMS times and that adherence to scheduled collections was reasonable, particularly in the early post-waking period, we next examined whether the SPIT device captured the expected diurnal patterns of cortisol and DHEA over the course of the day.
+
+```{r, echo = F,  warning = F, message = F}
+# ============================================================
+# Piecewise linear model with knot at 30 minutes
+# ============================================================
+
+# -----------------------------
+#  Choose a time-since-wake variable
+# Prefer MEMS; fall back to booklet if MEMS missing
+# -----------------------------
+q3_dat <- analysis_dat %>%
+  mutate(
+    time_mins = dplyr::coalesce(wake_diff_cap, wake_diff_booklet),
+
+    Collection.Sample = factor(Collection.Sample, levels = 1:4,
+                               labels = c("Waking", "+30 min", "Lunch", "+10 hours"))
+  ) %>%
+  # Keep only reasonable time range for 1-day diurnal curve
+  filter(!is.na(time_mins), time_mins >= 0, time_mins <= 900)  # up to 15 hours, adjust if desired
+
+# -----------------------------
+# Create piecewise time terms (knot at 30 minutes)
+# -----------------------------
+q3_dat <- q3_dat %>%
+  mutate(
+    t1 = pmin(time_mins, 30),         # 0 to 30
+    t2 = pmax(time_mins - 30, 0)      # after 30
+  )
+
+# -----------------------------
+#    log-transform outcomes 
+# -----------------------------
+q3_dat <- q3_dat %>%
+  mutate(
+    log_cortisol = if_else(!is.na(Cortisol..nmol.L.) & Cortisol..nmol.L. > 0,
+                           log(Cortisol..nmol.L.), NA_real_),
+    log_dhea     = if_else(!is.na(DHEA..nmol.L.) & DHEA..nmol.L. > 0,
+                           log(DHEA..nmol.L.), NA_real_)
+  )
+
+# -----------------------------
+# Fit mixed models
+# Random intercept for SubjectID
+# -----------------------------
+m_cort <- lmer(log_cortisol ~ t1 + t2 + (1 | SubjectID), data = q3_dat, REML = TRUE)
+m_dhea <- lmer(log_dhea     ~ t1 + t2 + (1 | SubjectID), data = q3_dat, REML = TRUE)
+
+# -----------------------------
+# Plot: observed + model-predicted mean curve (on original scale)
+# -----------------------------
+pred_grid <- data.frame(time_mins = seq(0, 720, by = 5)) %>%  # 0 to 12 hours
+  mutate(
+    t1 = pmin(time_mins, 30),
+    t2 = pmax(time_mins - 30, 0)
+  )
+
+pred_grid$cort_pred <- exp(predict(m_cort, newdata = pred_grid, re.form = NA))
+pred_grid$dhea_pred <- exp(predict(m_dhea, newdata = pred_grid, re.form = NA))
+
+# Cortisol plot
+p_cort <- ggplot(q3_dat, aes(x = time_mins, y = Cortisol..nmol.L.)) +
+  geom_point(alpha = 0.35, na.rm = TRUE) +
+  geom_line(data = pred_grid, aes(x = time_mins, y = cort_pred),  color = "blue", linewidth = 1, na.rm = TRUE) +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "red")+
+  labs(
+    title = "Cortisol",
+    x = NULL,
+    y = "Cortisol (nmol/L)"
+  )
+
+# DHEA 
+p_dhea <- ggplot(q3_dat, aes(x = time_mins, y = DHEA..nmol.L.)) +
+  geom_point(alpha = 0.35, na.rm = TRUE) +
+  geom_line(data = pred_grid, aes(x = time_mins, y = dhea_pred),  color = "blue", linewidth = 1,  na.rm = TRUE) +
+  geom_vline(xintercept = 30, linetype = "dashed", color = "red")+
+  labs(
+    title = "DHEA",
+    x = NULL,
+    y = "DHEA (nmol/L)"
+  )
+
+# Side-by-side layout
+(p_cort | p_dhea) +
+  plot_annotation(
+    title   = "Figure 2: Diurnal patterns of cortisol and DHEA relative to waking",
+    caption = "Minutes since waking (MEMS preferred; booklet fallback)",
+    theme = theme(
+      plot.title   = element_text(hjust = 0.5, size = 14, face = "bold"),
+      plot.caption = element_text(hjust = 0.5, size = 11)
+    )
+  )
+
+
+```
+
+Figure 2 illustrates observed cortisol and DHEA concentrations over time since waking, with superimposed population-level model predictions. Cortisol concentrations show an early rise shortly after waking followed by a gradual decline throughout the day, whereas DHEA concentrations decline rapidly after waking and continue to decrease more slowly over time.
+
+To formally quantify these observed patterns and estimate rates of change before and after 30 minutes post-waking, we fit piecewise linear mixed-effects models with a knot at 30 minutes after waking. Table 4 below presents the estimated percent changes in cortisol and DHEA levels over time since waking, including the early post-waking period and the subsequent diurnal decline.
+
+```{r, echo = F}
+# Helper functions
+pct_from_log <- function(x) 100 * (exp(x) - 1)
+
+extract_pct_ci <- function(model, hormone) {
+
+  est <- summary(model)$coefficients
+  ci  <- confint(model, parm = c("t1", "t2"), method = "Wald")
+
+  tibble(
+    Hormone = hormone,
+    Interval = c("Waking → 30 min", "After 30 min (per hour)"),
+
+    Estimate_pct = c(
+      pct_from_log(est["t1", "Estimate"] * 30),
+      pct_from_log(est["t2", "Estimate"] * 60)
+    ),
+
+    CI_low_pct = c(
+      pct_from_log(ci["t1", 1] * 30),
+      pct_from_log(ci["t2", 1] * 60)
+    ),
+
+    CI_high_pct = c(
+      pct_from_log(ci["t1", 2] * 30),
+      pct_from_log(ci["t2", 2] * 60)
+    ),
+
+    p_value = c(
+      est["t1", "Pr(>|t|)"],
+      est["t2", "Pr(>|t|)"]
+    )
+  )
+}
+
+pct_cort <- extract_pct_ci(m_cort, "Cortisol")
+pct_dhea <- extract_pct_ci(m_dhea, "DHEA")
+
+pct_table <- bind_rows(pct_cort, pct_dhea) %>%
+  mutate(
+    Estimate_pct = round(Estimate_pct, 1),
+    CI = paste0("(", round(CI_low_pct, 1), ", ", round(CI_high_pct, 1), ")"),
+    p_value = ifelse(p_value < 0.001, "<0.001", round(p_value, 3))
+  ) %>%
+  select(Hormone, Interval, Estimate_pct, CI, p_value)
+
+
+pct_table %>%
+  kable(
+    caption = "Table 4. Estimated percent change in cortisol and DHEA over time since waking",
+    col.names = c("Hormone", "Time interval", "Percent change (%)", "95% CI", "p-value"),
+    align = "lcccc"
+  ) %>%
+  kable_styling(
+    full_width = FALSE,
+    bootstrap_options = c("striped", "condensed")
+  ) %>%
+  footnote(
+    general = paste(
+      "Percent changes and confidence intervals were obtained by back-transforming",
+      "log-scale mixed-effects model estimates.",
+      "Post–30 minute estimates represent percent change per hour.",
+        "Positive values indicate increases; negative values indicate declines."
+    ),
+    general_title = "Note: "
+  )
+
+```
+
+Cortisol increased by an estimated 25.9% from waking to 30 minutes post-waking (95% CI: -2.3% to 62.2%; p = 0.076). After 30 minutes, cortisol declined significantly at a rate of 12.3% per hour (95% CI: -14.1% to -10.4%; p < 0.001).
+
+In contrast, DHEA exhibited a marked decline immediately after waking, decreasing by 46.2% within the first 30 minutes (95% CI: -56.7% to -33.3%; p < 0.001), followed by a continued but slower decline of 9.0% per hour thereafter (95% CI: -10.6% to -7.4%; p < 0.001). These results indicate distinct early-morning dynamics for cortisol and DHEA and support the ability of the SPIT method to capture biologically plausible diurnal hormone patterns.
+
+### Discussion
+
+This analysis evaluated the feasibility and timing accuracy of the SPIT saliva collection method by assessing agreement between participant-recorded and electronically recorded sampling times, adherence to protocol-specified collection windows, and expected diurnal patterns of cortisol and DHEA. Together, these analyses provide insight into both the timing accuracy and biological validity of the SPIT method.
+
+Booklet-recorded sampling times demonstrated strong proportional agreement with MEMS-recorded times, indicating that participants were generally able to record sampling times accurately using the SPIT booklet. Although a small negative intercept suggested a tendency for booklet times to be recorded slightly earlier than MEMS times, the magnitude of this bias was modest relative to the overall range of sampling times and is unlikely to be meaningful for characterizing diurnal hormone patterns.
+
+Adherence to scheduled sampling windows was higher for the +30-minute post-waking collection than for the +10-hour collection, particularly when adherence was assessed using MEMS-recorded times. This pattern is consistent with greater challenges in maintaining protocol compliance later in the day under free-living conditions. The discrepancy between booklet-based and MEMS-based adherence estimates suggests that self-reported times may overestimate compliance, highlighting the value of electronic monitoring when protocol adherence is a key concern.
+
+Despite modest variability in sampling times, the SPIT booklet captured biologically plausible diurnal patterns for both cortisol and DHEA. Cortisol exhibited an early post-waking rise followed by a sustained decline, while DHEA showed a sharp decrease shortly after waking with continued decline thereafter. These patterns are consistent with established diurnal profiles measured using standard saliva collection methods, supporting the ability of the SPIT device to capture meaningful temporal variation in hormone levels.
+
+Overall, these findings suggest that the SPIT booklet is a feasible tool for assessment of cortisol and DHEA data. The combination of good agreement with electronic monitoring, reasonable protocol adherence and biologically plausible hormone patterns supports its potential utility in large scale or resource limited studies. However, these findings also emphasize the value of electronic monitoring for evaluating timing accuracy and protocol adherence, particularly for late-day sample collections.
+
+### Limitations
+
+This analysis has several limitations that should be considered when interpreting the findings. The study was conducted in a relatively small sample of healthy adult participants, which may limit the generalizability of the results to more diverse or clinical populations where adherence and timing accuracy may differ. Estimates of time since waking relied on self-reported wake times from sleep diaries, which may introduce measurement error even when electronically recorded sampling times were available. Missing timing data occurred for both booklet and MEMS measures due to incomplete recording or device malfunction. Adherence and agreement metrics were summarized descriptively, and regression analyses were conducted without adjustment for multiple comparisons, consistent with the exploratory aims of the study.  Additionally, hormone concentrations were measured over only three consecutive days which limits the ability to assess longer-term variability in diurnal patterns. Despite these limitations, the findings provide useful evidence supporting the feasibility of the SPIT method and highlight areas for refinement in future studies.
+
+\newpage
+### Appendix A. Model diagnostics for cortisol and DHEA mixed-effects models
+```{r, echo = F}
+p_raw_cort <- ggplot(analysis_dat, aes(x = Cortisol..nmol.L.)) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black",na.rm = TRUE) +
+  labs(
+    title = "Raw cortisol",
+    x = "Cortisol (nmol/L)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+p_log_cort <- ggplot(analysis_dat, aes(x = log(Cortisol..nmol.L.))) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black", na.rm = TRUE) +
+  labs(
+    title = "Log-transformed cortisol",
+    x = "log(Cortisol)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+p_raw_dhea <- ggplot(analysis_dat, aes(x = DHEA..nmol.L.)) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black", na.rm = TRUE) +
+  labs(
+    title = "Raw DHEA",
+    x = "DHEA (nmol/L)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+p_log_dhea <- ggplot(analysis_dat, aes(x = log(DHEA..nmol.L.))) +
+  geom_histogram(bins = 30, fill = "grey70", color = "black",na.rm = TRUE) +
+  labs(
+    title = "Log-transformed DHEA",
+    x = "log(DHEA)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+## side by side layout
+(p_raw_cort | p_log_cort) /
+(p_raw_dhea | p_log_dhea) +
+  plot_annotation(
+    title = "Distributions of raw and log-transformed hormone concentrations",
+    theme = theme(
+      plot.title = element_text(hjust = 0.5, face = "bold")
+    )
+  )
+
+```
+
+Raw hormone concentrations exhibit substantial right skewness, which is reduced after log transformation, supporting the use of log-scale outcomes in mixed-effects modeling.
+
+\newpage
+### Reproducible Research Information
+GitHub Repository:
