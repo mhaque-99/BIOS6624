@@ -36,6 +36,9 @@ raw_dat <- read.csv(here::here("Project1/DataRaw", "hiv_6624_final.csv"))
 ## Initial overview of the dataset
 
 ```{r}
+# drop the index column
+raw_dat <- raw_dat %>% select(-any_of("X"))
+
 # Check structure
 str(raw_dat)
 head(raw_dat)
@@ -51,6 +54,22 @@ glimpse(raw_dat)
 naniar::gg_miss_var(raw_dat)
 naniar::vis_miss(raw_dat)
 ```
+## Structure check
+```{r}
+# Number of visits per subject
+table(table(raw_dat$newid))
+
+# Check min/max years per subject
+raw_dat %>%
+  group_by(newid) %>%
+  summarise(min_year = min(years, na.rm = TRUE),
+            max_year = max(years, na.rm = TRUE),
+            n_visits = n())
+
+```
+
+
+
 ## Visual exploration of the outcomes
 
 ```{r}
@@ -59,7 +78,13 @@ hist(log10(raw_dat$VLOAD)); hist(sqrt(raw_dat$LEU3N)); hist(log(101-raw_dat$AGG_
 ```
 
 
-## Descriptives
+## Iniytial look at the descriptives
 ```{r}
-table1(~ hard_drugs + hivpos + ART + everART + VLOAD + LEU3N + AGG_PHYS + AGG_MENT + age | years, raw_dat)
+table(raw_dat$RACE, useNA = "ifany")
+table(raw_dat$years)
+table(raw_dat$EDUCBAS)
+```
+
+```{r}
+table1(~ age + hard_drugs + hivpos + ART + everART + VLOAD + LEU3N + AGG_PHYS + AGG_MENT | years, raw_dat)
 ```
