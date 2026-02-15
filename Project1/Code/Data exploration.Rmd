@@ -7,24 +7,59 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(naniar)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(table1)
+library(gtsummary) # this is a package to make tables of descriptive stats
+library(flextable) # this can help print tables to docx (MS Word)
+library(tableone) # this is another fairly easy to use descriptive stats package
+library(psych) # used for corr.test
+library(knitr) # for writing tables
+library(kableExtra) # for writing tables
+library(cmdstanr)
+library(bayesplot)  # diagnostic plots of the MCMC chains
+library(posterior)  # for summarizing posterior draws
+library(bayestestR) # for calculating higest density posterior intervals
+library(mcmcse)     # for calculating MCMCSE's
+library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
+
+raw_dat <- read.csv(here::here("Project1/DataRaw", "hiv_6624_final.csv"))
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+## Initial overview of the dataset
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r}
+# Check structure
+str(raw_dat)
+head(raw_dat)
+nrow(raw_dat) 
 
-```{r cars}
-summary(cars)
+summary(raw_dat)
+glimpse(raw_dat)
 ```
 
-## Including Plots
+## View the Missingness pattern of variables:
 
-You can also embed plots, for example:
+```{r}
+naniar::gg_miss_var(raw_dat)
+naniar::vis_miss(raw_dat)
+```
+## Visual exploration of the outcomes
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+```{r}
+hist(raw_dat$VLOAD); hist(raw_dat$LEU3N); hist(raw_dat$AGG_PHYS); hist(raw_dat$AGG_MENT)
+hist(log10(raw_dat$VLOAD)); hist(sqrt(raw_dat$LEU3N)); hist(log(101-raw_dat$AGG_PHYS)); hist(log(101-raw_dat$AGG_MENT))
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+## Descriptives
+```{r}
+table1(~ hard_drugs + hivpos + ART + everART + VLOAD + LEU3N + AGG_PHYS + AGG_MENT + age | years, raw_dat)
+```
