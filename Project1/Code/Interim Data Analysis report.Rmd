@@ -1,0 +1,66 @@
+---
+title: "Interim Data Analysis"
+author: "Mahfuza Haque Mahi"
+date: "2026-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(tibble)
+library(naniar)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(table1)
+#library(gtsummary) # this is a package to make tables of descriptive stats
+library(flextable) # this can help print tables to docx (MS Word)
+library(tableone) # this is another fairly easy to use descriptive stats package
+library(psych) # used for corr.test
+library(knitr) # for writing tables
+library(kableExtra) # for writing tables
+library(cmdstanr)
+library(bayesplot)  # diagnostic plots of the MCMC chains
+library(posterior)  # for summarizing posterior draws
+library(bayestestR) # for calculating higest density posterior intervals
+library(mcmcse)     # for calculating MCMCSE's
+library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
+
+analytic_dat <- read.csv(here::here("Project1/DataProcessed", "hivclean.csv"))
+```
+
+## Table 1
+```{r}
+library(dplyr)
+library(table1)
+
+tab1_dat <- analytic_dat %>%
+  filter(years == 0) %>%
+  filter(!is.na(hard_drugs_bl))   # <-- KEY FIX
+
+# Optional variable labels
+label(tab1_dat$age_bl)   <- "Age (years)"
+label(tab1_dat$BMI_bl)   <- "BMI (kg/m^2)"
+label(tab1_dat$race_grp) <- "Race (collapsed)"
+label(tab1_dat$educ_grp) <- "Education (collapsed)"
+label(tab1_dat$SMOKE_bl) <- "Smoking status"
+label(tab1_dat$logVLOAD) <- "Viral load (log10 copies/mL + 1)"
+label(tab1_dat$LEU3N)    <- "CD4+ T-cell count"
+label(tab1_dat$AGG_PHYS) <- "Physical QOL (SF-36, 0–100)"
+label(tab1_dat$AGG_MENT) <- "Mental QOL (SF-36, 0–100)"
+
+tbl1 <- table1(
+  ~ age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl +
+    logVLOAD + LEU3N + AGG_PHYS + AGG_MENT
+  | hard_drugs_bl,
+  data = tab1_dat,
+  overall = TRUE
+)
+
+tbl1
+```
+
