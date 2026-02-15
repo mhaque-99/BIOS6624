@@ -1,0 +1,209 @@
+---
+title: "Data Clean"
+author: "Mahfuza Haque Mahi"
+date: "2026-02-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(tibble)
+library(naniar)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(table1)
+library(gtsummary) # this is a package to make tables of descriptive stats
+library(flextable) # this can help print tables to docx (MS Word)
+library(tableone) # this is another fairly easy to use descriptive stats package
+library(psych) # used for corr.test
+library(knitr) # for writing tables
+library(kableExtra) # for writing tables
+library(cmdstanr)
+library(bayesplot)  # diagnostic plots of the MCMC chains
+library(posterior)  # for summarizing posterior draws
+library(bayestestR) # for calculating higest density posterior intervals
+library(mcmcse)     # for calculating MCMCSE's
+library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
+
+raw_dat <- read.csv(here::here("Project1/DataRaw", "hiv_6624_final.csv"))
+# drop the index column
+raw_dat <- raw_dat %>% select(-any_of("X"))
+
+```
+
+## Create the analytic dataset
+```{r}
+# ============================================================
+# Construct analytic dataset for MACS HAART response project
+# - Exposure: baseline hard drug use (hard_drugs_bl)
+# - Outcomes: VLOAD, LEU3N, AGG_PHYS, AGG_MENT
+# - Covariates (baseline-fixed): age, BMI, EDUCBAS, RACE, SMOKE
+# - Recode special missing/improbable values using codebook
+# - Create merged categories for race, education
+# - Save final analytic dataset to CSV
+# ============================================================
+
+# -----------------------------
+# Start from raw data
+# -----------------------------
+dat0 <- raw_dat
+
+# -----------------------------
+# Recode special missing / improbable values (minimal)
+# -----------------------------
+dat1 <- dat0 %>%
+  mutate(
+    # BMI: 999 = insufficient data, -1 = improbable value
+    BMI = ifelse(BMI %in% c(999, -1), NA, BMI)
+  )
+
+# -----------------------------
+# Create transformed variables for VLOAD and LEU3N
+# -----------------------------
+dat2 <- dat1 %>%
+  mutate(
+    logVLOAD    = ifelse(is.na(VLOAD), NA, log10(VLOAD + 1)),
+    sqrt_LEU3N  = ifelse(is.na(LEU3N), NA, sqrt(LEU3N))
+  )
+
+# -----------------------------
+# Define analysis population:
+#  - HIV positive
+#  - Has baseline (years==0)
+#  - Has year 2 (years==2)
+#  - Ever on ART (everART==1 at any visit)
+# -----------------------------
+ids_keep <- dat2 %>%
+  filter(hivpos == 1) %>%
+  group_by(newid) %>%
+  summarise(
+    has_baseline = any(years == 0, na.rm = TRUE),
+    has_year2    = any(years == 2, na.rm = TRUE),
+    everART_any  = any(everART == 1, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  filter(has_baseline, has_year2, everART_any) %>%
+  pull(newid)
+
+dat3 <- dat2 %>%
+  filter(newid %in% ids_keep)
+
+# -----------------------------
+# Create baseline-fixed exposure & covariates (from years==0)
+# -----------------------------
+baseline <- dat3 %>%
+  filter(years == 0) %>%
+  select(
+    newid,
+    hard_drugs,
+    age, BMI, EDUCBAS, RACE, SMOKE,
+    logVLOAD, sqrt_LEU3N, AGG_PHYS, AGG_MENT
+  ) %>%
+  rename(
+    hard_drugs_bl  = hard_drugs,
+    age_bl         = age,
+    BMI_bl         = BMI,
+    EDUCBAS_bl     = EDUCBAS,
+    RACE_bl        = RACE,
+    SMOKE_bl       = SMOKE,
+    logVLOAD_bl    = logVLOAD,
+    sqrtLEU3N_bl   = sqrt_LEU3N,
+    AGG_PHYS_bl    = AGG_PHYS,
+    AGG_MENT_bl    = AGG_MENT
+  )
+
+# -----------------------------
+# Build longitudinal analytic dataset:
+# outcomes across all years + baseline-fixed exposure/covariates
+# -----------------------------
+analysis_long <- dat3 %>%
+  filter(years %in% c(0, 2)) %>%
+  select(
+    newid, years,
+    logVLOAD, sqrt_LEU3N, LEU3N, AGG_PHYS, AGG_MENT
+  ) %>%
+  left_join(
+    baseline %>%
+      select(newid, hard_drugs_bl, age_bl, BMI_bl, EDUCBAS_bl, RACE_bl, SMOKE_bl),
+    by = "newid"
+  )
+
+# -----------------------------
+# Merge levels of RACE and EDUCBAS (baseline)
+# -----------------------------
+analysis_long <- analysis_long %>%
+  mutate(
+    race_grp = case_when(
+      RACE_bl %in% c(1, 2) ~ "White",
+      RACE_bl %in% c(3, 4) ~ "Black",
+      RACE_bl %in% c(5, 6, 7, 8) ~ "Other",
+      TRUE ~ NA_character_
+    ),
+    educ_grp = case_when(
+      EDUCBAS_bl %in% c(1, 2, 3) ~ "HighSchool_or_less",
+      EDUCBAS_bl == 4 ~ "SomeCollege",
+      EDUCBAS_bl %in% c(5, 6, 7) ~ "CollegePlus",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  mutate(
+    race_grp = factor(race_grp),
+    educ_grp = factor(educ_grp)
+  )
+
+# convert hard_drugs into factor variable
+analysis_long <- analysis_long %>%
+  mutate(
+    hard_drugs_bl = factor(
+      hard_drugs_bl,
+      levels = c(0, 1),
+      labels = c("No", "Yes")
+    )
+  )
+
+# -----------------------------
+# Keep final columns (clean analytic dataset)
+# -----------------------------
+analytic_dataset <- analysis_long %>%
+  select(
+    newid, years,
+    hard_drugs_bl,
+    logVLOAD, sqrt_LEU3N, LEU3N, AGG_PHYS, AGG_MENT,
+    age_bl, BMI_bl,
+    race_grp, educ_grp,
+    SMOKE_bl
+  ) %>%
+  arrange(newid, years)
+
+# -----------------------------
+# Quick checks
+# -----------------------------
+cat("Rows:", nrow(analytic_dataset), "\n")
+cat("Unique subjects:", dplyr::n_distinct(analytic_dataset$newid), "\n")
+cat("Exposure (baseline hard drugs):\n")
+print(table(analytic_dataset$hard_drugs_bl, useNA = "ifany"))
+cat("\nMissing baseline exposure:\n")
+print(sum(is.na(analytic_dataset$hard_drugs_bl)))
+table(analytic_dataset$years)
+
+
+# -----------------------------
+# Export the clean dataset
+# -----------------------------
+write.csv(
+  analytic_dataset,
+  here::here("Project1", "DataProcessed", "hivclean.csv"),
+  row.names = FALSE
+)
+
+```
+
