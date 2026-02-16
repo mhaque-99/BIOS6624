@@ -1,8 +1,12 @@
 ---
-title: "Interim Data Analysis"
+title: "Interim Data Analysis Report: Hard Drug Use and HAART Treatment Response"
 author: "Mahfuza Haque Mahi"
-date: "2026-02-15"
-output: html_document
+date: "February 15, 2026"
+output:
+  word_document:
+  html_document:
+geometry: margin=1in
+fontsize: 12pt
 ---
 
 ```{r setup, include=FALSE}
@@ -33,22 +37,63 @@ library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
 analytic_dat <- read.csv(here::here("Project1/DataProcessed", "hivclean.csv"))
 ```
 
-## Table 1
+
+## Introduction
+
+The Multicenter AIDS Cohort Study (MACS) is an ongoing prospective cohort study examining the natural and treated histories of HIV-1 infection in homosexual and bisexual men across four major U.S. cities. Highly active antiretroviral therapy (HAART) is the standard treatment for HIV-infected individuals. However, evidence from laboratory studies suggests that hard drug use may inhibit immune function and increase HIV replication, potentially compromising treatment response. This secondary data analysis investigates whether baseline hard drug use (heroin and/or cocaine) is associated with differential treatment response following HAART initiation. Our analysis focuses on the first two years of HAART treatment, using both biological and quality-of-life measures as indicators of treatment response. Understanding whether hard drug users have poorer treatment outcomes would have important clinical implications for treatment intensification strategies and patient care coordination with substance abuse rehabilitation services.
+
+Our study population consists of HIV-positive men enrolled in MACS who initiated HAART and had complete baseline (year 0) and year 2 follow-up data. The primary exposure of interest is baseline hard drug use status (yes/no), defined as injection drug use or use of illicit heroin/opiates. We examine four treatment response outcomes measured at baseline (pre-treatment) and year 2 (on-treatment):
+
+1. **Viral load (log10-transformed copies/mL)**: HIV copies per mL of blood, log-transformed to address extreme right skewness
+2. **CD4+ T-cell Count (LEU3N)**: Cells per mL, square-root transformed to stabilize variance and normality
+3. **Physical Quality of Life (AGG_PHYS)**: SF-36 aggregate score (0–100 scale), where higher values indicate better health
+4. **Mental Quality of Life (AGG_MENT)**: SF-36 aggregate score (0–100 scale), where higher values indicate better mental health
+
+The primary hypothesis is that compared to non-drug users, individuals with baseline hard drug use will show worse treatment response at year 2, indicated by higher viral loads, lower CD4+ counts, and lower quality-of-life scores. Potential confounders include age, BMI, race/ethnicity, education, and baseline smoking status.
+
+## Preliminary Methods
+
+### Data Cleaning and Management
+
+The raw dataset was processed as follows to create the analytic dataset:
+
+**Variable Recoding:** Special missing or improbable values were recoded to missing according to the codebook. Specifically, BMI values of 999 (insufficient data) and −1 (improbable) were set to missing.
+
+**Variable Transformation:** Viral load was log-transformed (base 10) to address extreme right skewness documented in exploratory analyses. CD4+ T-cell counts were square-root transformed to reduce right skew and stabilize variance. SF-36 quality-of-life measures (AGG_PHYS and AGG_MENT) were retained on their original 0–100 scale based on preliminary distributional exploration.
+
+**Analysis Population Definition:** The analytic dataset includes subjects meeting all of the following criteria: (1) HIV-positive status; (2) complete baseline data (years = 0); (3) complete follow-up data at year 2 (years = 2); and (4) any documented antiretroviral therapy use at any study visit (everART = 1). This selection ensures that we analyze only individuals with confirmed HAART initiation and complete outcome data at both timepoints.
+
+**Baseline-Fixed Exposure and Covariates:** The exposure (hard drug use) and all baseline covariates (age, BMI, race/ethnicity, education, smoking status) were derived from year 0 data and remain constant across the longitudinal dataset structure to facilitate within-person comparison of outcomes before and during treatment.
+
+**Categorical Variable Harmonization:** Race was consolidated into three meaningful groups (White, Black, Other) based on the codebook's race categories. Education was similarly grouped into three levels (High School or less, Some College, College or higher). Hard drug use status was coded as a factor with levels "No" and "Yes." Smoking status was coded as a facotr wit levels "Current", "Former" and "Never".
+
+### Statistical Analysis Plan
+
+**Descriptive Analysis:** Baseline characteristics will be summarized overall and stratified by hard drug use status. Continuous variables will be described using mean, standard deviation, median, and interquartile range. Categorical variables will be presented as frequencies and percentages.
+**Frequentist Approach:** For each of the four outcomes, an ANCOVA framework will be used:
+
+$$Y_{2} = \beta_0 + \beta_1(\text{Hard Drug Use}_{baseline}) + \beta_2 Y_{0} + \mathbf{X}\beta + \varepsilon,$$
+
+where:$Y_2$ = Year 2 outcome, $Y_0$ = Baseline value of the outcome, $X$= baseline covariates (age, BMI, smoking, race, education). $\beta_1$ represents the adjusted difference in Year 2 outcome between baseline hard drug users and non-users, and $\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$. This approach improves efficiency and controls for baseline outcome differences. Model assumptions (linearity, homoscedasticity, normality of residuals) will be evaluated using diagnostic plots. Statistical significance will be defined as $\alpha = 0.05.$
+**Bayesian Approach:** we will also fit the same models using Bayesian methods with Stan (via cmdstanr). For each outcome, we will specify weakly informative priors on regression coefficients (normal distributions centered at zero with SD = 100) and a half-normal prior on residual standard deviations. Posterior estimates will be obtained via MCMC sampling using four chains. Posterior inference will include 95% highest posterior density intervals (HPDI) and effective sample size diagnostics.  Model fit will be evaluated using information criteria (DIC, WAIC, LOO-CV) for Bayesian models.
+**Model Comparisons:** The key parameters of interest will be compared interms of  point estimates, frequestist confidence intervals and Bayesian credible invervals to assess consistency between frameworks
+
+## Preliminary Descriptive Analysis - Table 1
 ```{r}
 library(dplyr)
 library(table1)
 
 tab1_dat <- analytic_dat %>%
   filter(years == 0) %>%
-  filter(!is.na(hard_drugs_bl))   # <-- KEY FIX
+  filter(!is.na(hard_drugs_bl)) 
 
 # Optional variable labels
 label(tab1_dat$age_bl)   <- "Age (years)"
 label(tab1_dat$BMI_bl)   <- "BMI (kg/m^2)"
-label(tab1_dat$race_grp) <- "Race (collapsed)"
-label(tab1_dat$educ_grp) <- "Education (collapsed)"
+label(tab1_dat$race_grp) <- "Race"
+label(tab1_dat$educ_grp) <- "Education"
 label(tab1_dat$SMOKE_bl) <- "Smoking status"
-label(tab1_dat$logVLOAD) <- "Viral load (log10 copies/mL + 1)"
+label(tab1_dat$logVLOAD) <- "Viral load (log10 copies/mL)"
 label(tab1_dat$LEU3N)    <- "CD4+ T-cell count"
 label(tab1_dat$AGG_PHYS) <- "Physical QOL (SF-36, 0–100)"
 label(tab1_dat$AGG_MENT) <- "Mental QOL (SF-36, 0–100)"
@@ -57,10 +102,13 @@ tbl1 <- table1(
   ~ age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl +
     logVLOAD + LEU3N + AGG_PHYS + AGG_MENT
   | hard_drugs_bl,
-  data = tab1_dat,
-  overall = TRUE
+  data = tab1_dat, 
+  caption = "Baseline characteristics of participants by baseline hard drug use status."
 )
 
 tbl1
 ```
 
+The analytic cohort includes r nrow(tab1_dat) participants at baseline. Of these, r table(tab1_dat$hard_drugs_bl)['Yes'] (r round(100*table(tab1_dat$hard_drugs_bl)['Yes']/nrow(tab1_dat), 1)%) reported hard drug use, and r table(tab1_dat$hard_drugs_bl)['No'] (r round(100*table(tab1_dat$hard_drugs_bl)['No']/nrow(tab1_dat), 1)%) did not.
+
+Baseline age and viral load were similar between groups. Hard drug users were more likely to be current smokers and to have lower educational attainment. CD4$^+$ T-cell counts and quality-of-life scores were modestly lower among hard drug users. These differences support adjustment for baseline covariates in subsequent regression analyses.
