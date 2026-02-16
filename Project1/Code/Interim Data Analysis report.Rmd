@@ -17,6 +17,7 @@ latex_engine: xelatex
 
 ---
 
+**Data Analysis Plan**
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
@@ -45,21 +46,15 @@ library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
 analytic_dat <- read.csv(here::here("Project1/DataProcessed", "hivclean.csv"))
 ```
 
-**Introduction: **
-The data for this project come from the Multicenter AIDS Cohort Study (MACS), a longitudinal prospective cohort study of HIV-infected men followed annually after initiation of highly active antiretroviral therapy (HAART). Our study population consists of HIV-positive men enrolled in MACS who initiated HAART and had complete baseline (year 0) and year 2 follow-up data. The primary exposure of interest is baseline hard drug use status (yes/no), defined as injection drug use or use of illicit heroin/opiates. We examine four treatment response outcomes measured at baseline and year 2: (1) Viral load (log10-transformed copies/mL), (2) CD4+ T-cell Count (LEU3N), (3) Physical Quality of Life (AGG_PHYS) and (4) Mental Quality of Life (AGG_MENT).
-The primary hypothesis is that compared to non-drug users, individuals with baseline hard drug use will show worse treatment response at year 2, indicated by higher viral loads, lower CD4+ counts, and lower quality-of-life scores. Potential confounders include age, BMI, race/ethnicity, education, and baseline smoking status.
+**Introduction**
+
+The data for this project come from the Multicenter AIDS Cohort Study (MACS), a longitudinal prospective cohort study of HIV-infected men followed annually after initiation of highly active antiretroviral therapy (HAART). Our study population consists of HIV-positive men enrolled in MACS who initiated HAART and had complete baseline (year 0) and year 2 follow-up data. The primary exposure of interest is baseline hard drug use status (yes/no). We examine four treatment response outcomes measured at baseline and year 2: (1) Viral load (log10-transformed copies/mL), (2) CD4+ T-cell Count (LEU3N), (3) Physical Quality of Life (AGG_PHYS) and (4) Mental Quality of Life (AGG_MENT). The primary hypothesis is that compared to non-drug users, individuals with baseline hard drug use will show worse treatment response at year 2, indicated by higher viral loads, lower CD4+ counts, and lower quality-of-life scores. Potential confounders include age, BMI, race/ethnicity, education, and baseline smoking status.
 
 **Preliminary Methods**
 
-**Data Cleaning and Management:** Special missing or improbable values were recoded to missing according to the codebook. Specifically, BMI values of 999 and -1 were set to missing. Viral load was log-transformed (base 10) to address extreme right skewness. CD4 counts were examined both on the raw and square-root scale. The analytic dataset includes subjects meeting all of the following criteria: (1) HIV-positive status; (2) complete baseline data; (3) complete follow-up data at year 2; and (4) initiated ART (everART = 1). This selection ensures that we analyze only individuals with confirmed HAART initiation and complete outcome data at both timepoints. The exposure (hard drug use) and all baseline covariates (age, BMI, race, education, smoking status) were derived from year 0 data. Race and education were collapsed into broader categories to improve model stability.
+Data Cleaning and Management: Special missing or improbable values were recoded to missing according to the codebook. Viral load was log-transformed to address extreme right skewness. CD4 counts were examined both on the raw and square-root scale. The analytic dataset includes subjects meeting all of the following criteria: (1) complete baseline data; (2) complete follow-up data at year 2; and (3) initiated ART (everART = 1). This selection ensures that we analyze only individuals with confirmed HAART initiation and complete outcome data at both timepoints. The exposure and all baseline covariates were derived from year 0 data. Race and education were collapsed into broader categories to improve model stability.
 
-**Statistical Analysis Plan**
-
-**Descriptive Analysis:** Baseline characteristics will be summarized overall and stratified by hard drug use status.
-
-**Frequentist Approach:** For each of the four outcomes, an ANCOVA framework will be used: $Y_{2} = \beta_0 + \beta_1(\text{Hard Drug Use}_{baseline}) + \beta_2 Y_{0} + \mathbf{X}\beta + \varepsilon,$ where $Y_2$ = Year 2 outcome, $Y_0$ = Baseline value of the outcome, $X$ = baseline covariates. $\beta_1$ represents the adjusted difference in Year 2 outcome between baseline hard drug users and non-users, and $\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$. This approach improves efficiency and controls for baseline outcome differences.
-
-**Bayesian Approach:** We will also fit the same models using Bayesian methods with Stan. For each outcome, we will specify weakly informative priors on regression coefficients (N(0, sd = 100)) and a half-normal prior on residual standard deviations. Posterior estimates will be obtained via MCMC sampling. Posterior inference will include 95% highest posterior density intervals (HPDI) and effective sample size diagnostics. Model fit will be evaluated using information criteria (DIC, WAIC, LOO-CV) for Bayesian models. The key parameters of interest will be compared in terms of point estimates and interval estimates.
+Statistical Analysis: Baseline characteristics will be summarized overall and stratified by hard drug use status. For each of the four outcomes, an ANCOVA framework will be used: $Y_{2} = \beta_0 + \beta_1(\text{Hard Drug Use}_{baseline}) + \beta_2 Y_{0} + \mathbf{X}\beta + \varepsilon,$ where $Y_2$ = Year 2 outcome, $Y_0$ = Baseline value of the outcome, $X$ = baseline covariates. $\beta_1$ represents the adjusted difference in Year 2 outcome between baseline hard drug users and non-users, and $\varepsilon_i \sim \mathcal{N}(0, \sigma^2)$. This approach improves efficiency and controls for baseline outcome differences. We will also fit the same models using Bayesian methods with Stan. For each outcome, we will specify weakly informative priors on regression coefficients (N(0, sd = 100)) and a half-normal prior on residual standard deviations. Posterior estimates will be obtained via MCMC sampling. Posterior inference will include 95% HPDI and effective sample size diagnostics. Model fit will be evaluated using information criteria for Bayesian models. The key parameters of interest will be compared in terms of point estimates and interval estimates.
 
 **Preliminary Descriptive Analysis - Table 1**
 
@@ -96,11 +91,7 @@ tbl1 <- table1(
   caption = "Baseline characteristics of participants by baseline hard drug use status."
 )
 
-cat("\\begin{scriptsize}\n")
-
 tbl1
-
-cat("\\end{scriptsize}\n")
 ```
 
 
