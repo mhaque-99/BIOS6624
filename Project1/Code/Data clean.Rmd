@@ -21,7 +21,7 @@ library(ggplot2)
 library(ggbeeswarm)
 library(ggpubr)
 library(table1)
-library(gtsummary) # this is a package to make tables of descriptive stats
+#library(gtsummary) # this is a package to make tables of descriptive stats
 library(flextable) # this can help print tables to docx (MS Word)
 library(tableone) # this is another fairly easy to use descriptive stats package
 library(psych) # used for corr.test
@@ -71,7 +71,7 @@ dat1 <- dat0 %>%
 # -----------------------------
 dat2 <- dat1 %>%
   mutate(
-    logVLOAD    = ifelse(is.na(VLOAD), NA, log10(VLOAD + 1)),
+    logVLOAD    = ifelse(is.na(VLOAD), NA, log10(VLOAD)),
     sqrt_LEU3N  = ifelse(is.na(LEU3N), NA, sqrt(LEU3N))
   )
 
@@ -167,6 +167,17 @@ analysis_long <- analysis_long %>%
       hard_drugs_bl,
       levels = c(0, 1),
       labels = c("No", "Yes")
+    )
+  )
+
+# Convert SMOKE into factor variable
+analysis_long <- analysis_long %>%
+  mutate(
+    SMOKE_bl = case_when(
+      SMOKE_bl == 1 ~ "Never",
+      SMOKE_bl == 2 ~ "Former",
+      SMOKE_bl == 3 ~ "Current",
+      TRUE ~ NA_character_
     )
   )
 
