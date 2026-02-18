@@ -80,7 +80,7 @@ dat2 <- dat1 %>%
 #  - HIV positive
 #  - Has baseline (years==0)
 #  - Has year 2 (years==2)
-#  - Ever on ART (everART==1 at any visit)
+#  - Ever on ART (everART == 1 at any visit)
 # -----------------------------
 ids_keep <- dat2 %>%
   filter(hivpos == 1) %>%
@@ -120,10 +120,16 @@ baseline <- dat3 %>%
     AGG_PHYS_bl    = AGG_PHYS,
     AGG_MENT_bl    = AGG_MENT
   )
+# Create ADH-table from year 2
+#------------------------
+adh_y2 <- dat3 %>%
+  filter(years == 2) %>%
+  select(newid, ADH) %>%
+  rename(adh_y2 = ADH)
 
 # -----------------------------
 # Build longitudinal analytic dataset:
-# outcomes across all years + baseline-fixed exposure/covariates
+# outcomes across all years + baseline-fixed exposure/covariates + ADH from year 2
 # -----------------------------
 analysis_long <- dat3 %>%
   filter(years %in% c(0, 2)) %>%
@@ -135,7 +141,8 @@ analysis_long <- dat3 %>%
     baseline %>%
       select(newid, hard_drugs_bl, age_bl, BMI_bl, EDUCBAS_bl, RACE_bl, SMOKE_bl),
     by = "newid"
-  )
+  )%>%
+  left_join(adh_y2, by = "newid")
 
 # -----------------------------
 # Merge levels of RACE and EDUCBAS (baseline)
@@ -181,13 +188,30 @@ analysis_long <- analysis_long %>%
     )
   )
 
+# Convert ADH into factor variable
+analysis_long <- analysis_long %>%
+  mutate(
+     adh_cat = case_when(
+      adh_y2 == 1 ~ "100%",
+      adh_y2 == 2 ~ "95-99%",
+      adh_y2 == 3 ~ "75-94%",
+      adh_y2 == 4 ~ "<75%",
+      TRUE ~ NA_character_
+    ),
+    adh_cat = factor(
+      adh_cat,
+      levels = c("100%", "95-99%", "75-94%", "<75%")
+    )
+  )
+  
+
 # -----------------------------
 # Keep final columns (clean analytic dataset)
 # -----------------------------
 analytic_dataset <- analysis_long %>%
   select(
     newid, years,
-    hard_drugs_bl,
+    hard_drugs_bl, adh_y2, adh_cat, 
     logVLOAD, sqrt_LEU3N, LEU3N, AGG_PHYS, AGG_MENT,
     age_bl, BMI_bl,
     race_grp, educ_grp,

@@ -16,7 +16,7 @@ library(ggplot2)
 library(ggbeeswarm)
 library(ggpubr)
 library(table1)
-library(gtsummary) # this is a package to make tables of descriptive stats
+#library(gtsummary) # this is a package to make tables of descriptive stats
 library(flextable) # this can help print tables to docx (MS Word)
 library(tableone) # this is another fairly easy to use descriptive stats package
 library(psych) # used for corr.test
@@ -77,6 +77,7 @@ hist(raw_dat$VLOAD); hist(raw_dat$LEU3N); hist(raw_dat$AGG_PHYS); hist(raw_dat$A
 hist(log10(raw_dat$VLOAD)); hist(sqrt(raw_dat$LEU3N)); hist(log(101-raw_dat$AGG_PHYS)); hist(log(101-raw_dat$AGG_MENT))
 ```
 
+Exploratory analyses of the outcome distributions indicate that transformation is necessary for some variables but not all. Viral load (VLOAD) is extremely right-skewed, with a long upper tail, making transformation essential; therefore, a log transformation is recommended. CD4+ T-cell count (LEU3N) exhibits moderate right skew, and a square-root transformation substantially improves symmetry and stabilizes variance. In contrast, the SF-36 quality-of-life measures (AGG_PHYS and AGG_MENT) display only mild skewness and appear approximately symmetric; thus, they can initially be modeled on their original 0–100 scale. Transformations for these measures should only be considered if model diagnostics later reveal substantial departures from normality or homoscedasticity.
 
 ## Iniytial look at the descriptives
 ```{r}
