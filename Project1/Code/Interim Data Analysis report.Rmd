@@ -84,11 +84,12 @@ label(tab1_dat$logVLOAD) <- "Viral load (log10 copies/mL)"
 label(tab1_dat$LEU3N)    <- "CD4+ T-cell count"
 label(tab1_dat$AGG_PHYS) <- "Physical QOL (SF-36, 0-100)"
 label(tab1_dat$AGG_MENT) <- "Mental QOL (SF-36, 0-100)"
+label(tab1_dat$adh_cat) <- "Adherence at Year 2"
 
 tbl1 <- table1(
-  ~ age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl + logVLOAD + LEU3N + AGG_PHYS + AGG_MENT | hard_drugs_bl,
+  ~ age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl + logVLOAD + LEU3N + AGG_PHYS + AGG_MENT + adh_cat | hard_drugs_bl,
     data = tab1_dat, 
-  caption = "Baseline characteristics of participants by baseline hard drug use status."
+  caption = "Baseline characteristics  (and selected Year 2 follow-up measures) of participants by baseline hard drug use status."
 )
 
 tbl1
