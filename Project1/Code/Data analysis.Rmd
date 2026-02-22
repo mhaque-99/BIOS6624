@@ -1,0 +1,153 @@
+---
+title: "Data analysis"
+author: "Mahfuza Haque Mahi"
+date: "2026-02-18"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(tidyr)
+library(readr)
+library(tibble)
+library(naniar)
+library(lme4)
+library(ggplot2)
+library(ggbeeswarm)
+library(ggpubr)
+library(table1)
+#library(gtsummary) # this is a package to make tables of descriptive stats
+library(flextable) # this can help print tables to docx (MS Word)
+library(tableone) # this is another fairly easy to use descriptive stats package
+library(psych) # used for corr.test
+library(knitr) # for writing tables
+library(kableExtra) # for writing tables
+library(cmdstanr)
+library(bayesplot)  # diagnostic plots of the MCMC chains
+library(posterior)  # for summarizing posterior draws
+library(bayestestR) # for calculating higest density posterior intervals
+library(mcmcse)     # for calculating MCMCSE's
+library(loo)        # for getting model fit statistics (WAIC and LOO-IC)
+
+analytic_dat <- read.csv(here::here("Project1/DataProcessed", "hivclean.csv"))
+```
+
+## table 1
+```{r, echo = F, results='asis'}
+tab1_dat <- analytic_dat %>%
+  filter(years == 0) %>%
+  filter(!is.na(hard_drugs_bl))  %>%
+  mutate(
+    educ_grp = forcats::fct_recode(
+      educ_grp,
+      "High school or less" = "HighSchool_or_less",
+      "Some college"        = "SomeCollege",
+      "College+"            = "CollegePlus"
+    )
+  )
+
+tab1_dat <- tab1_dat %>%
+  mutate(
+    adh_cat = factor(
+      adh_cat,
+      levels = c("100%", "95-99%", "75-94%", "<75%")
+    ),
+    race_grp = factor(
+      race_grp,
+      levels = c("White", "Other")
+    ),
+    educ_grp = factor(
+      educ_grp,
+      levels = c("High school or less", 
+                 "Some college", 
+                 "College+")
+    )
+  )
+
+# variable labels
+label(tab1_dat$age_bl)   <- "Age (years)"
+label(tab1_dat$BMI_bl)   <- "BMI (kg/m2)"
+label(tab1_dat$race_grp) <- "Race"
+label(tab1_dat$educ_grp) <- "Education"
+label(tab1_dat$SMOKE_bl) <- "Smoking status"
+label(tab1_dat$logVLOAD) <- "Viral load (log10 copies/mL)"
+label(tab1_dat$LEU3N)    <- "CD4+ T-cell count"
+label(tab1_dat$AGG_PHYS) <- "Physical QOL (SF-36, 0-100)"
+label(tab1_dat$AGG_MENT) <- "Mental QOL (SF-36, 0-100)"
+label(tab1_dat$adh_cat) <- "Adherence at Year 2"
+
+tbl1 <- table1(
+  ~ age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl + logVLOAD + LEU3N + AGG_PHYS + AGG_MENT + adh_cat | hard_drugs_bl,
+    data = tab1_dat, 
+  caption = "Baseline characteristics  (and selected Year 2 follow-up measures) of participants by baseline hard drug use status."
+)
+
+
+tbl1
+```
+
+
+
+## Frequentist approach
+```{r}
+# Create a wide dataset with baseline (Y0) and year 2 (Y2)
+  
+library(dplyr)
+library(tidyr)
+
+dat_wide <- analytic_dat %>%
+  filter(years %in% c(0, 2)) %>%
+  select(
+    newid, years,
+    hard_drugs_bl, age_bl, BMI_bl, race_grp, educ_grp, SMOKE_bl,
+    adh_y2, adh_cat,
+    logVLOAD, LEU3N, AGG_PHYS, AGG_MENT
+  ) %>%
+  pivot_wider(
+    id_cols = c(newid, hard_drugs_bl, age_bl, BMI_bl, race_grp, educ_grp, SMOKE_bl, adh_y2, adh_cat),
+    names_from = years,
+    values_from = c(logVLOAD, LEU3N, AGG_PHYS, AGG_MENT),
+    names_glue = "{.value}_y{years}"
+  ) %>%
+  filter(!is.na(hard_drugs_bl))
+
+
+```
+
+
+## Fit 4 ANCOVA models
+```{r}
+# Model 1: Viral load (log10) at year 2
+
+m_vload <- lm(
+  logVLOAD_y2 ~ hard_drugs_bl + logVLOAD_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+summary(m_vload)
+
+# Model 2: CD4 count (LEU3N) at year 2
+
+  m_cd4 <- lm(
+  LEU3N_y2 ~ hard_drugs_bl + LEU3N_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+summary(m_cd4)
+
+# Model 3: Physical QOL (AGG_PHYS) at year 2
+
+  m_phys <- lm(
+  AGG_PHYS_y2 ~ hard_drugs_bl + AGG_PHYS_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+summary(m_phys)
+
+# Model 4: Mental QOL (AGG_MENT) at year 2
+m_ment <- lm(
+  AGG_MENT_y2 ~ hard_drugs_bl + AGG_MENT_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+summary(m_ment)
+
+```
+
