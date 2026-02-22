@@ -92,10 +92,6 @@ tbl1
 ## Frequentist approach
 ```{r}
 # Create a wide dataset with baseline (Y0) and year 2 (Y2)
-  
-library(dplyr)
-library(tidyr)
-
 dat_wide <- analytic_dat %>%
   filter(years %in% c(0, 2)) %>%
   select(
@@ -111,8 +107,6 @@ dat_wide <- analytic_dat %>%
     names_glue = "{.value}_y{years}"
   ) %>%
   filter(!is.na(hard_drugs_bl))
-
-
 ```
 
 
@@ -150,4 +144,216 @@ m_ment <- lm(
 summary(m_ment)
 
 ```
+
+## Bayesian models
+```{r}
+################################################################
+# Write & compile Stan model
+################################################################
+
+stan_file <- write_stan_file("data {
+  int<lower=0> N;                  // number of observations
+  int<lower=0> P;                  // number of predictors including intercept
+  matrix[N, P] X;                  // design matrix (first column = intercept)
+  vector[N] y;                     // outcome
+
+  vector[P] prior_mean;            // prior means for each beta
+  vector<lower=0>[P] prior_sd;     // prior SDs for each beta
+
+  real<lower=0> sigma_prior_sd;    // SD for half-normal prior on sigma
+}
+
+parameters {
+  vector[P] beta;                  // regression coefficients
+  real<lower=0> sigma;             // residual SD
+}
+
+model {
+  // Vectorized priors for regression coefficients
+  beta ~ normal(prior_mean, prior_sd);
+
+  // Half-normal prior for sigma
+  sigma ~ normal(0, sigma_prior_sd);
+
+  // Likelihood
+  y ~ normal(X * beta, sigma);
+  
+
+}
+
+generated quantities {
+  // log likelihood for each observation for calculating model fit stats
+  vector[N] log_lik;
+  for (n in 1:N) {
+    log_lik[n] = normal_lpdf(y[n] | X[n] * beta, sigma);}
+  }", dir="Code/STAN", basename='linear_regression_half_normal'
+)
+
+
+mod <- cmdstan_model('Code/STAN/linear_regression_half_normal.stan')
+
+```
+
+```{r}
+##############################################################################
+# Function to fit Bayesian regression
+##############################################################################
+
+fit_bayes_model <- function(data, formula) {
+
+  d <- model.frame(formula, data = data, na.action = na.omit)
+
+  X <- model.matrix(formula, data = d)
+  y <- model.response(d)
+
+  N <- nrow(X)
+  P <- ncol(X)
+
+  prior_mean <- rep(0, P)
+  prior_sd   <- rep(2.5, P)
+  sigma_prior_sd <- 5
+
+  standata <- list(
+    N = N,
+    P = P,
+    X = X,
+    y = y,
+    prior_mean = prior_mean,
+    prior_sd = prior_sd,
+    sigma_prior_sd = sigma_prior_sd
+  )
+
+  fit <- mod$sample(
+    data = standata,
+    chains = 4,
+    parallel_chains = 4,
+    iter_warmup = 1000,
+    iter_sampling = 2000,
+    seed = 6624,
+    refresh = 200
+  )
+
+  list(
+    fit = fit,
+    coef_names = colnames(X)
+  )
+}
+
+##############################################################################
+# Fit the four Bayesian models
+##############################################################################
+
+fit_vload <- fit_bayes_model(
+  dat_wide,
+  logVLOAD_y2 ~ hard_drugs_bl + logVLOAD_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_cd4 <- fit_bayes_model(
+  dat_wide,
+  LEU3N_y2 ~ hard_drugs_bl + LEU3N_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_phys <- fit_bayes_model(
+  dat_wide,
+  AGG_PHYS_y2 ~ hard_drugs_bl + AGG_PHYS_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_ment <- fit_bayes_model(
+  dat_wide,
+  AGG_MENT_y2 ~ hard_drugs_bl + AGG_MENT_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+##############################################################################
+# Posterior summary function (PSAExample style)
+##############################################################################
+
+summarize_hd <- function(fit_obj, outcome_name,
+                         term = "hard_drugs_blYes") {
+
+  idx <- which(fit_obj$coef_names == term)
+
+  draws_mat <- fit_obj$fit$draws(
+    variables = paste0("beta[", idx, "]"),
+    format = "matrix"
+  )
+
+  v <- as.numeric(draws_mat)
+
+  tibble(
+    outcome = outcome_name,
+    mean = mean(v),
+    sd = sd(v),
+    q2.5 = quantile(v, 0.025),
+    q50  = quantile(v, 0.50),
+    q97.5 = quantile(v, 0.975),
+    pr_lt_0 = mean(v < 0)
+  )
+}
+
+##############################################################################
+# Extract posterior effects for hard drug use
+##############################################################################
+
+results_bayes <- bind_rows(
+  summarize_hd(fit_vload, "Viral Load (log10)"),
+  summarize_hd(fit_cd4,   "CD4 Count"),
+  summarize_hd(fit_phys,  "Physical QOL"),
+  summarize_hd(fit_ment,  "Mental QOL")
+)
+
+results_bayes
+
+```
+```{r}
+########## Convergence Diagnostics ############
+model_diagnostics <- function(fit_obj, outcome_name) {
+
+  summ <- fit_obj$fit$summary()
+
+  tibble(
+    outcome = outcome_name,
+    max_rhat = max(summ$rhat, na.rm = TRUE),
+    min_bulk_ess = min(summ$ess_bulk, na.rm = TRUE),
+    min_tail_ess = min(summ$ess_tail, na.rm = TRUE)
+  )
+}
+
+diag_conv <- bind_rows(
+  model_diagnostics(fit_vload, "Viral Load (log10)"),
+  model_diagnostics(fit_cd4,   "CD4 Count"),
+  model_diagnostics(fit_phys,  "Physical QOL"),
+  model_diagnostics(fit_ment,  "Mental QOL")
+)
+
+diag_conv
+
+########## Model Fit Statistics: LOO  ###########
+model_fit_stats <- function(fit_obj, outcome_name) {
+
+  log_lik_matrix <- fit_obj$fit$draws("log_lik", format = "matrix")
+
+  loo_res  <- loo(log_lik_matrix)
+
+  tibble(
+    outcome = outcome_name,
+    elpd_loo = loo_res$estimates["elpd_loo", "Estimate"],
+    looic = loo_res$estimates["looic", "Estimate"],
+    p_loo = loo_res$estimates["p_loo", "Estimate"]
+  )
+}
+
+diag_fit <- bind_rows(
+  model_fit_stats(fit_vload, "Viral Load (log10)"),
+  model_fit_stats(fit_cd4,   "CD4 Count"),
+  model_fit_stats(fit_phys,  "Physical QOL"),
+  model_fit_stats(fit_ment,  "Mental QOL")
+)
+
+diag_fit
+```
+
 
