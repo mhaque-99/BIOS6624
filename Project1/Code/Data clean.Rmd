@@ -60,10 +60,14 @@ dat0 <- raw_dat
 # -----------------------------
 # Recode special missing / improbable values (minimal)
 # -----------------------------
+
 dat1 <- dat0 %>%
   mutate(
-    # BMI: 999 = insufficient data, -1 = improbable value
-    BMI = ifelse(BMI %in% c(999, -1), NA, BMI)
+    BMI = ifelse(
+      BMI %in% c(999, -1) | BMI < 10 | BMI > 80,  # BMI: 999 = insufficient data, -1 = improbable value
+      NA,
+      BMI
+    )
   )
 
 # -----------------------------
@@ -151,8 +155,7 @@ analysis_long <- analysis_long %>%
   mutate(
     race_grp = case_when(
       RACE_bl %in% c(1, 2) ~ "White",
-      RACE_bl %in% c(3, 4) ~ "Black",
-      RACE_bl %in% c(5, 6, 7, 8) ~ "Other",
+      RACE_bl %in% c(3, 4, 5, 6, 7, 8) ~ "Other",
       TRUE ~ NA_character_
     ),
     educ_grp = case_when(
@@ -181,8 +184,7 @@ analysis_long <- analysis_long %>%
 analysis_long <- analysis_long %>%
   mutate(
     SMOKE_bl = case_when(
-      SMOKE_bl == 1 ~ "Never",
-      SMOKE_bl == 2 ~ "Former",
+      SMOKE_bl %in% c(1, 2) ~ "Not current",
       SMOKE_bl == 3 ~ "Current",
       TRUE ~ NA_character_
     )
@@ -219,6 +221,20 @@ analytic_dataset <- analysis_long %>%
   ) %>%
   arrange(newid, years)
 
+analytic_dat_complete <- analytic_dataset %>%
+  drop_na(
+    hard_drugs_bl,
+    age_bl,
+    BMI_bl,
+    race_grp,
+    educ_grp,
+    SMOKE_bl,
+    logVLOAD,
+    LEU3N,
+    AGG_PHYS,
+    AGG_MENT
+  )
+
 # -----------------------------
 # Quick checks
 # -----------------------------
@@ -235,7 +251,7 @@ table(analytic_dataset$years)
 # Export the clean dataset
 # -----------------------------
 write.csv(
-  analytic_dataset,
+  analytic_dat_complete,
   here::here("Project1", "DataProcessed", "hivclean.csv"),
   row.names = FALSE
 )
