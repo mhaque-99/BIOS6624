@@ -193,19 +193,13 @@ analysis_long <- analysis_long %>%
 # Convert ADH into factor variable
 analysis_long <- analysis_long %>%
   mutate(
-     adh_cat = case_when(
-      adh_y2 == 1 ~ "100%",
-      adh_y2 == 2 ~ "95-99%",
-      adh_y2 == 3 ~ "75-94%",
-      adh_y2 == 4 ~ "<75%",
+    adh_cat = case_when(
+      adh_y2 %in% c(1, 2) ~ ">= 95%",
+      adh_y2 %in% c(3, 4) ~ "<95%",
       TRUE ~ NA_character_
     ),
-    adh_cat = factor(
-      adh_cat,
-      levels = c("100%", "95-99%", "75-94%", "<75%")
-    )
+    adh_cat = factor(adh_cat, levels = c(">95%", "<95%"))
   )
-  
 
 # -----------------------------
 # Keep final columns (clean analytic dataset)
