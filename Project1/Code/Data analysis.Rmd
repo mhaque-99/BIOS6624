@@ -466,4 +466,55 @@ diag_fit <- bind_rows(
 diag_fit
 ```
 
+## MCMC Diagnostics
+```{r}
+## Helper to find indices automatically
+get_beta_idx <- function(fit_obj, term) {
+  idx <- which(fit_obj$coef_names == term)
+  if (length(idx) == 0) stop("Term not found: ", term,
+                             "\nAvailable terms: ", paste(fit_obj$coef_names, collapse = ", "))
+  idx
+}
+
+# function to make plots for any outcome/model pair
+plot_mcmc_diag <- function(fit_no, fit_adh, outcome_label,
+                           term_hd = "hard_drugs_blYes",
+                           term_adh = "adh_cat>=95%") {
+
+  # indices
+  idx_hd_no  <- get_beta_idx(fit_no,  term_hd)
+  idx_hd_adh <- get_beta_idx(fit_adh, term_hd)
+  idx_adh    <- get_beta_idx(fit_adh, term_adh)
+
+  pars_no  <- c(paste0("beta[", idx_hd_no, "]"), "sigma")
+  pars_adh <- c(paste0("beta[", idx_hd_adh, "]"),
+                paste0("beta[", idx_adh, "]"),
+                "sigma")
+
+  draws_no  <- as_draws_array(fit_no$fit$draws())
+  draws_adh <- as_draws_array(fit_adh$fit$draws())
+
+  cat("\n=============================\n")
+  cat("Outcome:", outcome_label, "\n")
+  cat("=============================\n")
+
+  # --- No adherence ---
+  cat("\n--- No adherence model ---\n")
+  print(mcmc_trace(draws_no,  pars = pars_no))
+  print(mcmc_dens_overlay(draws_no, pars = pars_no))
+
+  # --- With adherence ---
+  cat("\n--- With adherence model ---\n")
+  print(mcmc_trace(draws_adh,  pars = pars_adh))
+  print(mcmc_dens_overlay(draws_adh, pars = pars_adh))
+  print(mcmc_acf(draws_adh, pars = pars_adh))
+}
+
+# Run for all outcomes
+plot_mcmc_diag(fit_vload, fit_vload_adh, "VLOAD")
+plot_mcmc_diag(fit_cd4,  fit_cd4_adh,  "CD4 Count")
+plot_mcmc_diag(fit_phys, fit_phys_adh, "Physical QOL")
+plot_mcmc_diag(fit_ment, fit_ment_adh, "Mental QOL")
+
+```
 
