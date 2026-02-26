@@ -49,10 +49,6 @@ tab1_dat <- analytic_dat %>%
 
 tab1_dat <- tab1_dat %>%
   mutate(
-    adh_cat = factor(
-      adh_cat,
-      levels = c("100%", "95-99%", "75-94%", "<75%")
-    ),
     race_grp = factor(
       race_grp,
       levels = c("White", "Other")
@@ -113,36 +109,64 @@ dat_wide <- analytic_dat %>%
 ## Fit 4 ANCOVA models
 ```{r}
 # Model 1: Viral load (log10) at year 2
-
+## without ADH
 m_vload <- lm(
   logVLOAD_y2 ~ hard_drugs_bl + logVLOAD_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
-  data = dat_wide
-)
+  data = dat_wide)
 summary(m_vload)
 
-# Model 2: CD4 count (LEU3N) at year 2
+## with adherence
+m_vload_adj <- lm(logVLOAD_y2 ~ hard_drugs_bl + adh_cat + logVLOAD_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl, data = dat_wide)
 
+summary(m_vload_adj)
+
+# Model 2: CD4 count (LEU3N) at year 2
+## without ADH
   m_cd4 <- lm(
-  LEU3N_y2 ~ hard_drugs_bl + LEU3N_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
-  data = dat_wide
-)
+  LEU3N_y2 ~ hard_drugs_bl + LEU3N_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl, 
+  data = dat_wide)
 summary(m_cd4)
 
-# Model 3: Physical QOL (AGG_PHYS) at year 2
+## with ADH
+m_cd4_adj <- lm(
+  LEU3N_y2 ~ hard_drugs_bl + adh_cat + LEU3N_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
 
+summary(m_cd4_adj)
+
+
+# Model 3: Physical QOL (AGG_PHYS) at year 2
+## without ADH
   m_phys <- lm(
   AGG_PHYS_y2 ~ hard_drugs_bl + AGG_PHYS_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
   data = dat_wide
 )
 summary(m_phys)
 
+## with ADH
+m_phys_adj <- lm(
+  AGG_PHYS_y2 ~ hard_drugs_bl + adh_cat + AGG_PHYS_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+
+summary(m_phys_adj)
+
 # Model 4: Mental QOL (AGG_MENT) at year 2
+## without ADH
 m_ment <- lm(
   AGG_MENT_y2 ~ hard_drugs_bl + AGG_MENT_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
   data = dat_wide
 )
 summary(m_ment)
 
+## with ADH
+m_ment_adj <- lm(
+  AGG_MENT_y2 ~ hard_drugs_bl + adh_cat + AGG_MENT_y0 + age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl,
+  data = dat_wide
+)
+
+summary(m_ment_adj)
 ```
 
 ## Bayesian models
@@ -196,23 +220,32 @@ mod <- cmdstan_model('Code/STAN/linear_regression_half_normal.stan')
 
 ```{r}
 ##############################################################################
-# Function to fit Bayesian regression
+# Function to fit Bayesian regression - Prepare data to pass to stan
 ##############################################################################
 
 fit_bayes_model <- function(data, formula) {
 
   d <- model.frame(formula, data = data, na.action = na.omit)
 
-  X <- model.matrix(formula, data = d)
+  X <- model.matrix(formula, data = d)  # design matrix in our linear regression
   y <- model.response(d)
 
+# These are variables needed in Stan
+# N is the number of observations in the data set 
+# P is the number of columns in the design matrix
   N <- nrow(X)
   P <- ncol(X)
 
-  prior_mean <- rep(0, P)
-  prior_sd   <- rep(2.5, P)
-  sigma_prior_sd <- 5
+# Hyperparameters for prior distributions. These change depending on your assumptions
+# For this problem the prior for model error SD (sigma) is a half normal and priors for
+# the coefficients are normal with a mean and SD, which can be written flexibly 
+# with a mean vector (prior_mean below) and a SD vector (prior_sd below).  
 
+  prior_mean <- rep(0, P)
+  prior_sd   <- rep(100, P) # N(0, 100^2)
+  sigma_prior_sd <- 100 # Half-Normal(0, 100)
+
+# create data list to pass to STAN
   standata <- list(
     N = N,
     P = P,
@@ -223,6 +256,7 @@ fit_bayes_model <- function(data, formula) {
     sigma_prior_sd = sigma_prior_sd
   )
 
+# Fit model
   fit <- mod$sample(
     data = standata,
     chains = 4,
@@ -240,7 +274,7 @@ fit_bayes_model <- function(data, formula) {
 }
 
 ##############################################################################
-# Fit the four Bayesian models
+# Fit the four Bayesian models - without ADH
 ##############################################################################
 
 fit_vload <- fit_bayes_model(
@@ -268,11 +302,38 @@ fit_ment <- fit_bayes_model(
 )
 
 ##############################################################################
-# Posterior summary function (PSAExample style)
+# Fit the four Bayesian models - with ADH
 ##############################################################################
 
-summarize_hd <- function(fit_obj, outcome_name,
-                         term = "hard_drugs_blYes") {
+fit_vload_adh <- fit_bayes_model(
+  dat_wide,
+  logVLOAD_y2 ~ hard_drugs_bl + adh_cat + logVLOAD_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_cd4_adh <- fit_bayes_model(
+  dat_wide,
+  LEU3N_y2 ~ hard_drugs_bl + adh_cat + LEU3N_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_phys_adh <- fit_bayes_model(
+  dat_wide,
+  AGG_PHYS_y2 ~ hard_drugs_bl + adh_cat + AGG_PHYS_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+fit_ment_adh <- fit_bayes_model(
+  dat_wide,
+  AGG_MENT_y2 ~ hard_drugs_bl + adh_cat + AGG_MENT_y0 +
+    age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
+)
+
+##############################################################################
+# Posterior summary function
+##############################################################################
+
+summarize_term <- function(fit_obj, outcome_name, term) {
 
   idx <- which(fit_obj$coef_names == term)
 
@@ -285,6 +346,7 @@ summarize_hd <- function(fit_obj, outcome_name,
 
   tibble(
     outcome = outcome_name,
+    term = term,   # <<< ADD THIS
     mean = mean(v),
     sd = sd(v),
     q2.5 = quantile(v, 0.025),
@@ -295,27 +357,57 @@ summarize_hd <- function(fit_obj, outcome_name,
 }
 
 ##############################################################################
-# Extract posterior effects for hard drug use
+# Extract posterior effects for hard drug use 
 ##############################################################################
 
-results_bayes <- bind_rows(
-  summarize_hd(fit_vload, "Viral Load (log10)"),
-  summarize_hd(fit_cd4,   "CD4 Count"),
-  summarize_hd(fit_phys,  "Physical QOL"),
-  summarize_hd(fit_ment,  "Mental QOL")
+# term names to use
+term_hd  <- "hard_drugs_blYes"
+
+
+term_adh <- "adh_cat>=95%"
+
+results_bayes_compare <- bind_rows(
+  summarize_term(fit_vload,     "Viral Load (log10)", term_hd) %>% mutate(model = "No adherence"),
+  summarize_term(fit_vload_adh, "Viral Load (log10)", term_hd) %>% mutate(model = "With adherence"),
+  summarize_term(fit_vload_adh, "Viral Load (log10)", term_adh) %>% mutate(model = "With adherence"),
+
+  summarize_term(fit_cd4,     "CD4 Count", term_hd) %>% mutate(model = "No adherence"),
+  summarize_term(fit_cd4_adh, "CD4 Count", term_hd) %>% mutate(model = "With adherence"),
+  summarize_term(fit_cd4_adh, "CD4 Count", term_adh) %>% mutate(model = "With adherence"),
+
+  summarize_term(fit_phys,     "Physical QOL", term_hd) %>% mutate(model = "No adherence"),
+  summarize_term(fit_phys_adh, "Physical QOL", term_hd) %>% mutate(model = "With adherence"),
+  summarize_term(fit_phys_adh, "Physical QOL", term_adh) %>% mutate(model = "With adherence"),
+
+  summarize_term(fit_ment,     "Mental QOL", term_hd) %>% mutate(model = "No adherence"),
+  summarize_term(fit_ment_adh, "Mental QOL", term_hd) %>% mutate(model = "With adherence"),
+  summarize_term(fit_ment_adh, "Mental QOL", term_adh) %>% mutate(model = "With adherence")
 )
 
-results_bayes
 
+results_bayes_compare <- results_bayes_compare %>%
+  mutate(
+    term = case_when(
+      term == "hard_drugs_blYes" ~ "Hard drug use (Yes vs No)",
+      term == "adh_cat<95%" ~ "Adherence <95% (vs ≥95%)",
+      TRUE ~ term
+    )
+  )
+
+results_bayes_compare
 ```
+
+
+### Convergence diagnostics for both model sets
 ```{r}
 ########## Convergence Diagnostics ############
-model_diagnostics <- function(fit_obj, outcome_name) {
+model_diagnostics <- function(fit_obj, outcome_name, model_label) {
 
   summ <- fit_obj$fit$summary()
 
   tibble(
     outcome = outcome_name,
+    model   = model_label,
     max_rhat = max(summ$rhat, na.rm = TRUE),
     min_bulk_ess = min(summ$ess_bulk, na.rm = TRUE),
     min_tail_ess = min(summ$ess_tail, na.rm = TRUE)
@@ -323,34 +415,52 @@ model_diagnostics <- function(fit_obj, outcome_name) {
 }
 
 diag_conv <- bind_rows(
-  model_diagnostics(fit_vload, "Viral Load (log10)"),
-  model_diagnostics(fit_cd4,   "CD4 Count"),
-  model_diagnostics(fit_phys,  "Physical QOL"),
-  model_diagnostics(fit_ment,  "Mental QOL")
+  # --- No adherence ---
+  model_diagnostics(fit_vload, "Viral Load (log10)", "No adherence"),
+  model_diagnostics(fit_cd4,   "CD4 Count",          "No adherence"),
+  model_diagnostics(fit_phys,  "Physical QOL",       "No adherence"),
+  model_diagnostics(fit_ment,  "Mental QOL",         "No adherence"),
+
+  # --- With adherence ---
+  model_diagnostics(fit_vload_adh, "Viral Load (log10)", "With adherence"),
+  model_diagnostics(fit_cd4_adh,   "CD4 Count",          "With adherence"),
+  model_diagnostics(fit_phys_adh,  "Physical QOL",       "With adherence"),
+  model_diagnostics(fit_ment_adh,  "Mental QOL",         "With adherence")
 )
 
 diag_conv
+```
 
+### LOO diagnostics for both model sets
+
+```{r}
 ########## Model Fit Statistics: LOO  ###########
-model_fit_stats <- function(fit_obj, outcome_name) {
+model_fit_stats <- function(fit_obj, outcome_name, model_label) {
 
   log_lik_matrix <- fit_obj$fit$draws("log_lik", format = "matrix")
-
   loo_res  <- loo(log_lik_matrix)
 
   tibble(
     outcome = outcome_name,
+    model   = model_label,
     elpd_loo = loo_res$estimates["elpd_loo", "Estimate"],
-    looic = loo_res$estimates["looic", "Estimate"],
-    p_loo = loo_res$estimates["p_loo", "Estimate"]
+    looic    = loo_res$estimates["looic", "Estimate"],
+    p_loo    = loo_res$estimates["p_loo", "Estimate"]
   )
 }
 
 diag_fit <- bind_rows(
-  model_fit_stats(fit_vload, "Viral Load (log10)"),
-  model_fit_stats(fit_cd4,   "CD4 Count"),
-  model_fit_stats(fit_phys,  "Physical QOL"),
-  model_fit_stats(fit_ment,  "Mental QOL")
+  # --- No adherence ---
+  model_fit_stats(fit_vload, "Viral Load (log10)", "No adherence"),
+  model_fit_stats(fit_cd4,   "CD4 Count",          "No adherence"),
+  model_fit_stats(fit_phys,  "Physical QOL",       "No adherence"),
+  model_fit_stats(fit_ment,  "Mental QOL",         "No adherence"),
+
+  # --- With adherence ---
+  model_fit_stats(fit_vload_adh, "Viral Load (log10)", "With adherence"),
+  model_fit_stats(fit_cd4_adh,   "CD4 Count",          "With adherence"),
+  model_fit_stats(fit_phys_adh,  "Physical QOL",       "With adherence"),
+  model_fit_stats(fit_ment_adh,  "Mental QOL",         "With adherence")
 )
 
 diag_fit
