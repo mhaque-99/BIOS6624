@@ -194,11 +194,11 @@ analysis_long <- analysis_long %>%
 analysis_long <- analysis_long %>%
   mutate(
     adh_cat = case_when(
-      adh_y2 %in% c(1, 2) ~ ">= 95%",
+      adh_y2 %in% c(1, 2) ~ ">=95%",
       adh_y2 %in% c(3, 4) ~ "<95%",
       TRUE ~ NA_character_
     ),
-    adh_cat = factor(adh_cat, levels = c(">95%", "<95%"))
+    adh_cat = factor(adh_cat, levels = c(">=95%", "<95%"))
   )
 
 # -----------------------------

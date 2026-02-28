@@ -2,13 +2,16 @@
 title: "Data analysis"
 author: "Mahfuza Haque Mahi"
 date: "2026-02-18"
-output: html_document
+output: 
+  pdf_document:
+    latex_engine: xelatex   # more robust than pdflatex for special characters
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(dplyr)
 library(tidyr)
+library(broom)
 library(readr)
 library(tibble)
 library(naniar)
@@ -172,46 +175,46 @@ summary(m_ment_adj)
 ## Bayesian models
 ```{r}
 ################################################################
-# Write & compile Stan model
+# Write & compile Stan model - comment out the code after running once
 ################################################################
 
-stan_file <- write_stan_file("data {
-  int<lower=0> N;                  // number of observations
-  int<lower=0> P;                  // number of predictors including intercept
-  matrix[N, P] X;                  // design matrix (first column = intercept)
-  vector[N] y;                     // outcome
-
-  vector[P] prior_mean;            // prior means for each beta
-  vector<lower=0>[P] prior_sd;     // prior SDs for each beta
-
-  real<lower=0> sigma_prior_sd;    // SD for half-normal prior on sigma
-}
-
-parameters {
-  vector[P] beta;                  // regression coefficients
-  real<lower=0> sigma;             // residual SD
-}
-
-model {
-  // Vectorized priors for regression coefficients
-  beta ~ normal(prior_mean, prior_sd);
-
-  // Half-normal prior for sigma
-  sigma ~ normal(0, sigma_prior_sd);
-
-  // Likelihood
-  y ~ normal(X * beta, sigma);
-  
-
-}
-
-generated quantities {
-  // log likelihood for each observation for calculating model fit stats
-  vector[N] log_lik;
-  for (n in 1:N) {
-    log_lik[n] = normal_lpdf(y[n] | X[n] * beta, sigma);}
-  }", dir="Code/STAN", basename='linear_regression_half_normal'
-)
+# stan_file <- write_stan_file("data {
+#   int<lower=0> N;                  // number of observations
+#   int<lower=0> P;                  // number of predictors including intercept
+#   matrix[N, P] X;                  // design matrix (first column = intercept)
+#   vector[N] y;                     // outcome
+# 
+#   vector[P] prior_mean;            // prior means for each beta
+#   vector<lower=0>[P] prior_sd;     // prior SDs for each beta
+# 
+#   real<lower=0> sigma_prior_sd;    // SD for half-normal prior on sigma
+# }
+# 
+# parameters {
+#   vector[P] beta;                  // regression coefficients
+#   real<lower=0> sigma;             // residual SD
+# }
+# 
+# model {
+#   // Vectorized priors for regression coefficients
+#   beta ~ normal(prior_mean, prior_sd);
+# 
+#   // Half-normal prior for sigma
+#   sigma ~ normal(0, sigma_prior_sd);
+# 
+#   // Likelihood
+#   y ~ normal(X * beta, sigma);
+#   
+# 
+# }
+# 
+# generated quantities {
+#   // log likelihood for each observation for calculating model fit stats
+#   vector[N] log_lik;
+#   for (n in 1:N) {
+#     log_lik[n] = normal_lpdf(y[n] | X[n] * beta, sigma);}
+#   }", dir="Code/STAN", basename='linear_regression_half_normal'
+# )
 
 
 mod <- cmdstan_model('Code/STAN/linear_regression_half_normal.stan')
@@ -277,8 +280,7 @@ fit_bayes_model <- function(data, formula) {
 # Fit the four Bayesian models - without ADH
 ##############################################################################
 
-fit_vload <- fit_bayes_model(
-  dat_wide,
+fit_vload <- fit_bayes_model( data = dat_wide, 
   logVLOAD_y2 ~ hard_drugs_bl + logVLOAD_y0 +
     age_bl + BMI_bl + race_grp + educ_grp + SMOKE_bl
 )
@@ -333,27 +335,34 @@ fit_ment_adh <- fit_bayes_model(
 # Posterior summary function
 ##############################################################################
 
-summarize_term <- function(fit_obj, outcome_name, term) {
+
+summarize_term <- function(fit_obj, outcome_name, term, threshold = NULL) {
 
   idx <- which(fit_obj$coef_names == term)
-
   draws_mat <- fit_obj$fit$draws(
     variables = paste0("beta[", idx, "]"),
     format = "matrix"
   )
-
   v <- as.numeric(draws_mat)
+  hpd <- hdi(v, ci = 0.95)
 
-  tibble(
-    outcome = outcome_name,
-    term = term,   # <<< ADD THIS
-    mean = mean(v),
-    sd = sd(v),
-    q2.5 = quantile(v, 0.025),
-    q50  = quantile(v, 0.50),
-    q97.5 = quantile(v, 0.975),
-    pr_lt_0 = mean(v < 0)
+  out <- tibble(
+    outcome   = outcome_name,
+    term      = term,
+    mean      = mean(v),
+    sd        = sd(v),
+    HPDI_low  = hpd$CI_low,    
+    HPDI_high = hpd$CI_high,   
+    pr_lt_0   = mean(v < 0)
   )
+
+  if (!is.null(threshold)) {
+    out$prob_clin = mean(abs(v) > threshold)
+  } else {
+    out$prob_clin = NA_real_
+  }
+
+  out
 }
 
 ##############################################################################
@@ -366,24 +375,35 @@ term_hd  <- "hard_drugs_blYes"
 
 term_adh <- "adh_cat>=95%"
 
+
 results_bayes_compare <- bind_rows(
-  summarize_term(fit_vload,     "Viral Load (log10)", term_hd) %>% mutate(model = "No adherence"),
-  summarize_term(fit_vload_adh, "Viral Load (log10)", term_hd) %>% mutate(model = "With adherence"),
-  summarize_term(fit_vload_adh, "Viral Load (log10)", term_adh) %>% mutate(model = "With adherence"),
+  # Viral load (threshold = 0.5 log10)
+  summarize_term(fit_vload,     "Viral Load (log10)", "hard_drugs_blYes", threshold = 0.5) %>% mutate(model = "No adherence"),
+  summarize_term(fit_vload_adh, "Viral Load (log10)", "hard_drugs_blYes", threshold = 0.5) %>% mutate(model = "With adherence"),
+  summarize_term(fit_vload_adh, "Viral Load (log10)", "adh_cat>=95%",     threshold = 0.5) %>% mutate(model = "With adherence"),
 
-  summarize_term(fit_cd4,     "CD4 Count", term_hd) %>% mutate(model = "No adherence"),
-  summarize_term(fit_cd4_adh, "CD4 Count", term_hd) %>% mutate(model = "With adherence"),
-  summarize_term(fit_cd4_adh, "CD4 Count", term_adh) %>% mutate(model = "With adherence"),
+  # CD4 count (threshold = 50 cells)
+  summarize_term(fit_cd4,     "CD4 Count", "hard_drugs_blYes", threshold = 50) %>% mutate(model = "No adherence"),
+  summarize_term(fit_cd4_adh, "CD4 Count", "hard_drugs_blYes", threshold = 50) %>% mutate(model = "With adherence"),
+  summarize_term(fit_cd4_adh, "CD4 Count", "adh_cat>=95%",     threshold = 50) %>% mutate(model = "With adherence"),
 
-  summarize_term(fit_phys,     "Physical QOL", term_hd) %>% mutate(model = "No adherence"),
-  summarize_term(fit_phys_adh, "Physical QOL", term_hd) %>% mutate(model = "With adherence"),
-  summarize_term(fit_phys_adh, "Physical QOL", term_adh) %>% mutate(model = "With adherence"),
+  # Physical QOL (threshold = 2 points)
+  summarize_term(fit_phys,     "Physical QOL", "hard_drugs_blYes", threshold = 2) %>% mutate(model = "No adherence"),
+  summarize_term(fit_phys_adh, "Physical QOL", "hard_drugs_blYes", threshold = 2) %>% mutate(model = "With adherence"),
+  summarize_term(fit_phys_adh, "Physical QOL", "adh_cat>=95%",     threshold = 2) %>% mutate(model = "With adherence"),
 
-  summarize_term(fit_ment,     "Mental QOL", term_hd) %>% mutate(model = "No adherence"),
-  summarize_term(fit_ment_adh, "Mental QOL", term_hd) %>% mutate(model = "With adherence"),
-  summarize_term(fit_ment_adh, "Mental QOL", term_adh) %>% mutate(model = "With adherence")
-)
-
+  # Mental QOL (threshold = 2 points)
+  summarize_term(fit_ment,     "Mental QOL", "hard_drugs_blYes", threshold = 2) %>% mutate(model = "No adherence"),
+  summarize_term(fit_ment_adh, "Mental QOL", "hard_drugs_blYes", threshold = 2) %>% mutate(model = "With adherence"),
+  summarize_term(fit_ment_adh, "Mental QOL", "adh_cat>=95%",     threshold = 2) %>% mutate(model = "With adherence")
+) %>%
+  mutate(
+    term = case_when(
+      term == "hard_drugs_blYes" ~ "Hard drug use (Yes vs No)",
+      term == "adh_cat>=95%"     ~ "Adherence ≥95% (vs <95%)",
+      TRUE ~ term
+    )
+  )
 
 results_bayes_compare <- results_bayes_compare %>%
   mutate(
@@ -516,5 +536,488 @@ plot_mcmc_diag(fit_cd4,  fit_cd4_adh,  "CD4 Count")
 plot_mcmc_diag(fit_phys, fit_phys_adh, "Physical QOL")
 plot_mcmc_diag(fit_ment, fit_ment_adh, "Mental QOL")
 
+```
+
+## Making Caomparison tables and graphs for Report
+
+####### Outcome trajectories (Spaggetti Plot)
+```{r}
+# Shows how outcomes change over time by drug use group — motivates the ANCOVA
+traj_dat <- analytic_dat %>%
+  filter(!is.na(hard_drugs_bl)) %>%
+  mutate(hard_drugs_bl = factor(hard_drugs_bl, 
+                                 labels = c("No Hard Drug Use", "Hard Drug Use")))
+
+plot_trajectory <- function(data, outcome_var, y_label) {
+  
+  # individual trajectories (thinned for clarity)
+  set.seed(42)
+  ids_sample <- sample(unique(data$newid), 60)
+  
+  mean_dat <- data %>%
+    group_by(years, hard_drugs_bl) %>%
+    summarise(mean_val = mean(.data[[outcome_var]], na.rm = TRUE),
+              se_val   = sd(.data[[outcome_var]], na.rm = TRUE) / 
+                         sqrt(sum(!is.na(.data[[outcome_var]]))),
+              .groups = "drop")
+  
+  ggplot() +
+    # individual lines — muted
+    geom_line(
+      data = data %>% filter(newid %in% ids_sample),
+      aes(x = years, y = .data[[outcome_var]], 
+          group = newid, color = hard_drugs_bl),
+      alpha = 0.15, linewidth = 0.3
+    ) +
+    # group mean with ribbon
+    geom_ribbon(
+      data = mean_dat,
+      aes(x = years, 
+          ymin = mean_val - 1.96 * se_val, 
+          ymax = mean_val + 1.96 * se_val,
+          fill = hard_drugs_bl),
+      alpha = 0.25
+    ) +
+    geom_line(
+      data = mean_dat,
+      aes(x = years, y = mean_val, color = hard_drugs_bl),
+      linewidth = 1.2
+    ) +
+    geom_point(
+      data = mean_dat,
+      aes(x = years, y = mean_val, color = hard_drugs_bl),
+      size = 2.5
+    ) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "gray40") +
+    annotate("text", x = 0.1, y = Inf, 
+             label = "HAART\nstart", vjust = 1.5, size = 3, color = "gray40") +
+    scale_color_manual(values = c("#2166AC", "#D6604D")) +
+    scale_fill_manual(values  = c("#2166AC", "#D6604D")) +
+    scale_x_continuous(breaks = 0:8) +
+    labs(x = "Years since HAART initiation", y = y_label,
+         color = NULL, fill = NULL) +
+    theme_bw(base_size = 11) +
+    theme(legend.position = "bottom")
+}
+
+# Save the processed data once — reuse for all 4 plots
+traj_data <- analytic_dat %>%
+  filter(!is.na(hard_drugs_bl)) %>%
+  mutate(hard_drugs_bl = factor(hard_drugs_bl,
+                                labels = c("No Hard Drug Use", "Hard Drug Use")))
+
+# Now pass it to each plot
+t1 <- plot_trajectory(traj_data, "logVLOAD",  "Viral Load (log10 copies/mL)")
+t2 <- plot_trajectory(traj_data, "LEU3N",     "CD4+ T-cell Count")
+t3 <- plot_trajectory(traj_data, "AGG_PHYS",  "Physical QOL (SF-36)")
+t4 <- plot_trajectory(traj_data, "AGG_MENT",  "Mental QOL (SF-36)")
+
+ggarrange(t1, t2, t3, t4, 
+          ncol = 2, nrow = 2,
+          common.legend = TRUE, 
+          legend = "bottom",
+          labels = c("A", "B", "C", "D"))
+```
+
+
+```{r}
+##############################################################################
+# SETTINGS: terms + thresholds
+##############################################################################
+term_hd  <- "hard_drugs_blYes"
+term_adh <- "adh_cat>=95%"   # if this doesn't exist, see note at bottom
+
+# Clinically meaningful thresholds by outcome (absolute scale of beta)
+clin_thresh <- tibble(
+  Outcome = c("Viral Load (log10)", "CD4 Count", "Physical QOL", "Mental QOL"),
+  thresh  = c(0.5, 50, 2, 2)
+)
+
+
+##############################################################################
+# FREQUENTIST RESULTS TABLE
+##############################################################################
+
+extract_freq_results <- function(model, outcome_name, model_label, term_name) {
+
+  coef_tbl <- broom::tidy(model, conf.int = TRUE)
+  row <- coef_tbl %>% filter(term == term_name)
+  if (nrow(row) == 0) return(NULL)
+
+  tibble(
+    Outcome  = outcome_name,
+    Model    = model_label,
+    Term_raw = term_name,
+    freq_est = row$estimate,
+    freq_ci_low = row$conf.low,
+    freq_ci_hi  = row$conf.high,
+    freq_pval   = row$p.value
+  )
+}
+
+
+## Make frequentist results table
+
+freq_results <- bind_rows(
+  # --- No adherence (hard drugs only) ---
+  extract_freq_results(m_vload, "Viral Load (log10)", "No adherence", term_hd),
+  extract_freq_results(m_cd4,   "CD4 Count",          "No adherence", term_hd),
+  extract_freq_results(m_phys,  "Physical QOL",       "No adherence", term_hd),
+  extract_freq_results(m_ment,  "Mental QOL",         "No adherence", term_hd),
+
+  # --- With adherence (hard drugs) ---
+  extract_freq_results(m_vload_adj, "Viral Load (log10)", "With adherence", term_hd),
+  extract_freq_results(m_cd4_adj,   "CD4 Count",          "With adherence", term_hd),
+  extract_freq_results(m_phys_adj,  "Physical QOL",       "With adherence", term_hd),
+  extract_freq_results(m_ment_adj,  "Mental QOL",         "With adherence", term_hd),
+
+  # --- With adherence (adherence term) ---
+  extract_freq_results(m_vload_adj, "Viral Load (log10)", "With adherence", term_adh),
+  extract_freq_results(m_cd4_adj,   "CD4 Count",          "With adherence", term_adh),
+  extract_freq_results(m_phys_adj,  "Physical QOL",       "With adherence", term_adh),
+  extract_freq_results(m_ment_adj,  "Mental QOL",         "With adherence", term_adh)
+)
+
+##############################################################################
+# 2) BAYESIAN EXTRACTION (mean, 95% CrI, P(beta<0), P(|beta|>threshold))
+##############################################################################
+extract_bayes_term <- function(fit_obj, outcome_name, model_label, term_name, threshold) {
+
+  idx <- which(fit_obj$coef_names == term_name)
+  if (length(idx) == 0) return(NULL)
+
+  draws_mat <- fit_obj$fit$draws(
+    variables = paste0("beta[", idx, "]"),
+    format = "matrix"
+  )
+  v <- as.numeric(draws_mat)
+
+  hpd <- bayestestR::hdi(v, ci = 0.95)
+
+  tibble(
+    Outcome = outcome_name,
+    Model   = model_label,
+    Term_raw = term_name,
+    bayes_mean = mean(v),
+    bayes_ci_low = hpd$CI_low,
+    bayes_ci_hi  = hpd$CI_high,
+    bayes_pr_lt0 = mean(v < 0),
+    bayes_pr_clin = mean(abs(v) > threshold)
+  )
+}
+
+# helper to fetch threshold by outcome
+get_thresh <- function(outcome_name) {
+  clin_thresh %>% filter(Outcome == outcome_name) %>% pull(thresh)
+}
+
+bayes_results <- bind_rows(
+  # --- No adherence (hard drugs) ---
+  extract_bayes_term(fit_vload, "Viral Load (log10)", "No adherence", term_hd, get_thresh("Viral Load (log10)")),
+  extract_bayes_term(fit_cd4,   "CD4 Count",          "No adherence", term_hd, get_thresh("CD4 Count")),
+  extract_bayes_term(fit_phys,  "Physical QOL",       "No adherence", term_hd, get_thresh("Physical QOL")),
+  extract_bayes_term(fit_ment,  "Mental QOL",         "No adherence", term_hd, get_thresh("Mental QOL")),
+
+  # --- With adherence (hard drugs) ---
+  extract_bayes_term(fit_vload_adh, "Viral Load (log10)", "With adherence", term_hd, get_thresh("Viral Load (log10)")),
+  extract_bayes_term(fit_cd4_adh,   "CD4 Count",          "With adherence", term_hd, get_thresh("CD4 Count")),
+  extract_bayes_term(fit_phys_adh,  "Physical QOL",       "With adherence", term_hd, get_thresh("Physical QOL")),
+  extract_bayes_term(fit_ment_adh,  "Mental QOL",         "With adherence", term_hd, get_thresh("Mental QOL")),
+
+  # --- With adherence (adherence term) ---
+  extract_bayes_term(fit_vload_adh, "Viral Load (log10)", "With adherence", term_adh, get_thresh("Viral Load (log10)")),
+  extract_bayes_term(fit_cd4_adh,   "CD4 Count",          "With adherence", term_adh, get_thresh("CD4 Count")),
+  extract_bayes_term(fit_phys_adh,  "Physical QOL",       "With adherence", term_adh, get_thresh("Physical QOL")),
+  extract_bayes_term(fit_ment_adh,  "Mental QOL",         "With adherence", term_adh, get_thresh("Mental QOL"))
+)
+
+##############################################################################
+# COMBINED FREQUENTIST + BAYESIAN TABLE
+##############################################################################
+
+combined_results <- freq_results %>%
+  full_join(bayes_results, by = c("Outcome", "Model", "Term_raw")) %>%
+  mutate(
+    Term = case_when(
+      Term_raw == term_hd  ~ "Hard drug use (Yes vs No)",
+      Term_raw == term_adh ~ "Adherence ≥95% (vs <95%)",
+      TRUE ~ Term_raw
+    )
+  )
+
+##############################################################################
+# DISPLAY TABLE
+##############################################################################
+
+make_display_table <- function(data, filter_term, caption_text, add_clin_col = TRUE) {
+
+  out <- data %>%
+    filter(Term == filter_term) %>%
+    mutate(
+      `Freq: Est (95% CI)` =
+        ifelse(is.na(freq_est), NA,
+               sprintf("%.2f (%.2f, %.2f)", freq_est, freq_ci_low, freq_ci_hi)),
+      `Freq: p` =
+        ifelse(is.na(freq_pval), NA,
+               ifelse(freq_pval < 0.001, "<0.001", sprintf("%.3f", freq_pval))),
+      `Bayes: Mean (95% HPDI)` =
+        ifelse(is.na(bayes_mean), NA,
+               sprintf("%.2f (%.2f, %.2f)", bayes_mean, bayes_ci_low, bayes_ci_hi)),
+      `Bayes: P(beta<0)` =
+        ifelse(is.na(bayes_pr_lt0), NA, sprintf("%.3f", bayes_pr_lt0)),
+      `Bayes: P(Clin)` =
+        ifelse(is.na(bayes_pr_clin), NA, sprintf("%.3f", bayes_pr_clin))
+    ) %>%
+    select(Outcome, Model,
+           `Freq: Est (95% CI)`, `Freq: p`,
+           `Bayes: Mean (95% HPDI)`, `Bayes: P(beta<0)`,
+           `Bayes: P(Clin)`)
+
+  if (!add_clin_col) {
+    out <- out %>% select(-`Bayes: P(Clin)`)
+  }
+
+  out %>%
+    kable(caption = caption_text, align = "llcccccc") %>%
+    kable_styling(bootstrap_options = c("striped", "condensed"),
+                  full_width = FALSE) %>%
+    collapse_rows(columns = 1, valign = "top")
+}
+
+
+# Table 2a: Hard drug use effect — No adherence
+make_display_table(
+  combined_results %>% filter(Model == "No adherence"),
+  filter_term  = "Hard drug use (Yes vs No)",
+  caption_text = "Table 2a. Effect of baseline hard drug use on Year 2 outcomes — model without adherence adjustment.Clinically meaningful thresholds: 0.5 log copies/mL (Viral load), 50 cells/µL (CD4), 2 points (QOL)."
+)
+
+# Table 2b: Hard drug use effect — With adherence
+make_display_table(
+  combined_results %>% filter(Model == "With adherence"),
+  filter_term  = "Hard drug use (Yes vs No)",
+  caption_text = "Table 2b. Effect of baseline hard drug use on Year 2 outcomes — model adjusted for adherence.Clinically meaningful thresholds: 0.5 log copies/mL (Viral load), 50 cells/µL (CD4), 2 points (QOL)."
+)
+
+## Merge table 2a and 2b
+make_combined_hardrug_table <- function(data, caption_text) {
+  
+  data %>%
+    filter(Term == "Hard drug use (Yes vs No)") %>%
+    mutate(
+      `Freq: Est (95% CI)` = sprintf("%.2f (%.2f, %.2f)", freq_est, freq_ci_low, freq_ci_hi),
+      `Freq: p`            = ifelse(freq_pval < 0.001, "<0.001", sprintf("%.3f", freq_pval)),
+      `Bayes: Mean (95% HPDI)` = sprintf("%.2f (%.2f, %.2f)", bayes_mean, bayes_ci_low, bayes_ci_hi),
+      `Bayes: P(beta<0)`   = sprintf("%.3f", bayes_pr_lt0),
+      `Bayes: P(Clin)`     = sprintf("%.3f", bayes_pr_clin),
+      # relabel model column nicely
+      Model = factor(Model, 
+                     levels = c("No adherence", "With adherence"),
+                     labels = c("Unadjusted", "Adherence-adjusted"))
+    ) %>%
+    arrange(Outcome, Model) %>%
+    select(Outcome, Model,
+           `Freq: Est (95% CI)`, `Freq: p`,
+           `Bayes: Mean (95% HPDI)`, `Bayes: P(beta<0)`, `Bayes: P(Clin)`) %>%
+    kable(
+      caption   = caption_text,
+      align     = "llccccc",
+      booktabs  = TRUE,
+      col.names = c("Outcome", "Model",
+                    "Freq: Est (95% CI)", "Freq: p",
+                    "Bayes: Mean (95% HPDI)", "Bayes: P(beta<0)", "Bayes: P(Clin. threshold)")
+    ) %>%
+    kable_styling(
+      latex_options = c("hold_position", "striped", "scale_down"),
+      full_width    = FALSE
+    ) %>%
+    collapse_rows(columns = 1, valign = "middle", latex_hline = "major") %>%  # ← groups by Outcome
+    add_header_above(c(                           # ← adds a spanning header row
+      " " = 2,
+      "Frequentist" = 2,
+      "Bayesian" = 3
+    )) %>%
+    footnote(
+      general = "Clinically meaningful thresholds: Viral load 0.5 log10 copies/mL; CD4 50 cells/uL; QOL 2 points. Bayes: P(beta<0) = posterior probability of harm. Bayes: P(Clin. threshold) = posterior probability effect exceeds clinical threshold.",
+      general_title = "Note:",
+      footnote_as_chunk = TRUE,
+      threeparttable = TRUE   # ← keeps footnote width matched to table
+    )
+}
+
+# Table 2c: Adherence effect — With adherence
+make_display_table(
+  combined_results %>% filter(Model == "With adherence"),
+  filter_term  = "Adherence ≥95% (vs <95%)",
+  caption_text = "Table 2c. Effect of adherence (≥95% vs <95%) on Year 2 outcomes — adherence-adjusted model.Clinically meaningful thresholds: 0.5 log copies/mL (Viral load), 50 cells/µL (CD4), 2 points (QOL)."
+)
+```
+
+
+```{r}
+##############################################################################
+# Side-by-side forest plot
+##############################################################################
+
+plot_dat <- combined_results %>%
+  filter(Term == "Hard drug use (Yes vs No)") %>%
+  mutate(Model = factor(Model, levels = c("No adherence", "With adherence")))
+
+ggplot(plot_dat) +
+  # Frequentist
+  geom_pointrange(
+    aes(x = Outcome, y = freq_est, ymin = freq_ci_low, ymax = freq_ci_hi,
+        color = "Frequentist", shape = Model),
+    position = position_dodge(width = 0.5), size = 0.8
+  ) +
+  # Bayesian
+  geom_pointrange(
+    aes(x = Outcome, y = bayes_mean, ymin = bayes_ci_low, ymax = bayes_ci_hi,
+        color = "Bayesian", shape = Model),
+    position = position_dodge(width = 0.5), size = 0.8,
+    linetype = "dashed"
+  ) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "gray40") +
+  facet_wrap(~Outcome, scales = "free", nrow = 2) +
+  scale_color_manual(values = c("Frequentist" = "#2166AC", "Bayesian" = "#D6604D")) +
+  scale_shape_manual(values = c("No adherence" = 16, "With adherence" = 17)) +
+  labs(
+    title = "Effect of Baseline Hard Drug Use on Year 2 Outcomes",
+    subtitle = "Frequentist (95% CI) vs Bayesian (95% HPDI)",
+    x = NULL, y = "Estimated Effect",
+    color = "Approach", shape = "Model"
+  ) +
+  coord_flip() +
+  theme_bw(base_size = 12) +
+  theme(legend.position = "bottom")
+```
+
+## Convergence Diagnostic Table
+```{r}
+diag_conv %>%
+  mutate(
+    max_rhat     = sprintf("%.3f", max_rhat),
+    min_bulk_ess = round(min_bulk_ess),
+    min_tail_ess = round(min_tail_ess),
+    # flag any problems
+    converged = ifelse(max_rhat < 1.01 & min_bulk_ess > 400 & min_tail_ess > 400, 
+                       "Yes", "No")
+  ) %>%
+  kable(
+    caption   = "Table A1. MCMC convergence diagnostics for all Bayesian models.",
+    col.names = c("Outcome", "Model", "Max R-hat", 
+                  "Min Bulk ESS", "Min Tail ESS", "Converged?"),
+    align     = "llcccc",
+    booktabs  = TRUE
+  ) %>%
+  kable_styling(latex_options = c("hold_position", "striped")) %>%
+  collapse_rows(columns = 1, valign = "top") %>%
+  row_spec(
+    which(diag_conv$max_rhat >= 1.01),   # highlight any failures in red
+    color = "red"
+  )
+```
+
+## LOO model fit table
+```{r}
+diag_fit %>%
+  mutate(across(c(elpd_loo, looic, p_loo), ~sprintf("%.1f", .))) %>%
+  kable(
+    caption   = "Table A2. LOO-IC model fit statistics for all Bayesian models.",
+    col.names = c("Outcome", "Model", "ELPD-LOO", "LOO-IC", "p_LOO"),
+    align     = "llccc",
+    booktabs  = TRUE
+  ) %>%
+  kable_styling(latex_options = c("hold_position", "striped")) %>%
+  collapse_rows(columns = 1, valign = "top")
+```
+
+## LOO comparison witing each outcome
+```{r}
+# Compare no-adherence vs with-adherence model per outcome
+loo_comparison <- diag_fit %>%
+  select(outcome, model, looic) %>%
+  pivot_wider(names_from = model, values_from = looic) %>%
+  rename(
+    looic_no_adh   = `No adherence`,
+    looic_with_adh = `With adherence`
+  ) %>%
+  mutate(
+    delta_looic    = looic_with_adh - looic_no_adh,
+    preferred      = ifelse(delta_looic < 0, "With adherence", "No adherence")
+  )
+
+loo_comparison %>%
+  mutate(across(c(looic_no_adh, looic_with_adh, delta_looic), ~sprintf("%.1f", .))) %>%
+  kable(
+    caption   = "Table 4: LOO-IC comparison: adherence-adjusted vs unadjusted models. Lower LOO-IC = better fit.",
+    col.names = c("Outcome", "LOO-IC (No adherence)", 
+                  "LOO-IC (With adherence)", "Delta LOO-IC", "Preferred model"),
+    align     = "lcccc",
+    booktabs  = TRUE
+  ) %>%
+  kable_styling(latex_options = c("hold_position", "striped"))
+```
+
+## Posterior density plots
+
+```{r}
+plot_posterior_density <- function(fit_no, fit_adh, outcome_label, 
+                                    threshold, x_label) {
+  
+  idx_no  <- which(fit_no$coef_names  == "hard_drugs_blYes")
+  idx_adh <- which(fit_adh$coef_names == "hard_drugs_blYes")
+  
+  v_no  <- as.numeric(fit_no$fit$draws(paste0("beta[", idx_no, "]"),  format = "matrix"))
+  v_adh <- as.numeric(fit_adh$fit$draws(paste0("beta[", idx_adh, "]"), format = "matrix"))
+  
+  all_vals <- c(v_no, v_adh)
+  x_min <- quantile(all_vals, 0.001)
+  x_max <- quantile(all_vals, 0.999)
+  
+  # Only show threshold lines if they fall within the plot range
+  show_pos_thresh <- threshold  <= x_max & threshold  >= x_min
+  show_neg_thresh <- -threshold <= x_max & -threshold >= x_min
+  
+  p <- bind_rows(
+    tibble(value = v_no,  model = "Without adherence"),
+    tibble(value = v_adh, model = "With adherence")
+  ) %>%
+    ggplot(aes(x = value, fill = model, color = model)) +
+    geom_density(alpha = 0.35, linewidth = 0.8) +
+    geom_vline(xintercept = 0, linetype = "dashed", color = "black", linewidth = 0.7)
+  
+  # Add threshold lines only if visible in plot range
+  if (show_pos_thresh) {
+    p <- p + geom_vline(xintercept =  threshold, linetype = "dotted", 
+                        color = "gray30", linewidth = 0.7)
+  }
+  if (show_neg_thresh) {
+    p <- p + geom_vline(xintercept = -threshold, linetype = "dotted", 
+                        color = "gray30", linewidth = 0.7)
+  }
+  
+  # Place annotation at the threshold line that's actually visible
+  annot_x <- ifelse(show_neg_thresh, -threshold, 
+                    ifelse(show_pos_thresh, threshold, x_max))
+  
+  p +
+    annotate("text", 
+             x     = annot_x, 
+             y     = Inf,
+             label = paste0("Clin.\nthreshold\n(", threshold, ")"),
+             vjust = 1.4, hjust = 1.1,   # ← push label inward
+             size  = 2.8, color = "gray30") +
+    scale_fill_manual(values  = c("Without adherence" = "#2166AC",
+                                   "With adherence"    = "#D6604D")) +
+    scale_color_manual(values = c("Without adherence" = "#2166AC",
+                                   "With adherence"    = "#D6604D")) +
+    coord_cartesian(xlim = c(x_min, x_max), clip = "off") +  # ← prevents label clipping
+    labs(title = outcome_label, x = x_label, 
+         y = "Posterior density", fill = "Model", color = "Model") +
+    theme_bw(base_size = 11) +
+    theme(legend.position = "bottom",
+          plot.margin = margin(10, 40, 5, 5))  # ← extra right margin for label
+}
 ```
 
