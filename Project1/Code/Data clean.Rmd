@@ -64,7 +64,7 @@ dat0 <- raw_dat
 dat1 <- dat0 %>%
   mutate(
     BMI = ifelse(
-      BMI %in% c(999, -1) | BMI < 10 | BMI > 80,  # BMI: 999 = insufficient data, -1 = improbable value
+      BMI %in% c(999, -1) | BMI < 10 | BMI > 100,  # BMI: 999 = insufficient data, -1 = improbable value
       NA,
       BMI
     )
@@ -154,8 +154,8 @@ analysis_long <- dat3 %>%
 analysis_long <- analysis_long %>%
   mutate(
     race_grp = case_when(
-      RACE_bl %in% c(1, 2) ~ "White",
-      RACE_bl %in% c(3, 4, 5, 6, 7, 8) ~ "Other",
+      RACE_bl == 1 ~ "WhiteNonHisp",
+      RACE_bl %in% c(2, 3, 4, 5, 6, 7, 8) ~ "Other",
       TRUE ~ NA_character_
     ),
     educ_grp = case_when(
@@ -215,19 +215,30 @@ analytic_dataset <- analysis_long %>%
   ) %>%
   arrange(newid, years)
 
+# ----------------------------------------------------------
+# Instructor-required complete-case cohort for ALL models
+# (keeps only subjects with complete data at BOTH years 0 and 2
+# for all outcomes + predictors + adherence)
+# ----------------------------------------------------------
+vars_required <- c(
+  "hard_drugs_bl", "age_bl", "BMI_bl", "race_grp", "educ_grp", "SMOKE_bl", "adh_cat",
+  "logVLOAD", "LEU3N", "AGG_PHYS", "AGG_MENT"
+)
+
+ids_complete <- analytic_dataset %>%
+  filter(years %in% c(0, 2)) %>%
+  group_by(newid) %>%
+  summarise(
+    has_y0 = any(years == 0),
+    has_y2 = any(years == 2),
+    complete_all = all(complete.cases(across(all_of(vars_required)))),
+    .groups = "drop"
+  ) %>%
+  filter(has_y0, has_y2, complete_all) %>%
+  pull(newid)
+
 analytic_dat_complete <- analytic_dataset %>%
-  drop_na(
-    hard_drugs_bl,
-    age_bl,
-    BMI_bl,
-    race_grp,
-    educ_grp,
-    SMOKE_bl,
-    logVLOAD,
-    LEU3N,
-    AGG_PHYS,
-    AGG_MENT
-  )
+  filter(newid %in% ids_complete)
 
 # -----------------------------
 # Quick checks
@@ -239,7 +250,7 @@ print(table(analytic_dataset$hard_drugs_bl, useNA = "ifany"))
 cat("\nMissing baseline exposure:\n")
 print(sum(is.na(analytic_dataset$hard_drugs_bl)))
 table(analytic_dataset$years)
-
+cat("Complete-case subjects:", n_distinct(analytic_dat_complete$newid), "\n")
 
 # -----------------------------
 # Export the clean dataset
