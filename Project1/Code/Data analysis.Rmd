@@ -47,14 +47,19 @@ tab1_dat <- analytic_dat %>%
       "High school or less" = "HighSchool_or_less",
       "Some college"        = "SomeCollege",
       "College+"            = "CollegePlus"
-    )
+    ),
+    race_grp = forcats::fct_recode(
+      race_grp,
+      "White Non-Hispanic" = "WhiteNonHisp",
+      "Other" = "Other"
+      )
   )
 
 tab1_dat <- tab1_dat %>%
   mutate(
     race_grp = factor(
       race_grp,
-      levels = c("White", "Other")
+      levels = c("White Non-Hispanic", "Other")
     ),
     educ_grp = factor(
       educ_grp,
