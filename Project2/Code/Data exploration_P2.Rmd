@@ -1,0 +1,100 @@
+---
+title: "Data exploration"
+author: "Mahfuza Haque Mahi"
+date: "2026-03-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pwr)
+library(knitr)
+library(kableExtra)
+
+raw_dat <- read.csv(here::here("Project2/DataRaw", "PrelimData.csv"))
+```
+
+```{r}
+### Basic structure check
+glimpse(raw_dat)
+summary(raw_dat)
+
+# Missing data 
+colSums(is.na(raw_dat))               # count NAs per column
+mean(is.na(raw_dat))                  # overall % missing
+
+# Distributions (histograms) 
+raw_dat %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = value)) +
+  geom_histogram(bins = 10, fill = "steelblue", color = "white") +
+  facet_wrap(~variable, scales = "free") +
+  labs(title = "Distribution of All Variables")
+
+# Boxplots (spot outliers) 
+raw_dat %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "value") %>%
+  ggplot(aes(y = value)) +
+  geom_boxplot(fill = "steelblue", alpha = 0.6) +
+  facet_wrap(~variable, scales = "free_y") +
+  labs(title = "Boxplots — Outlier Check")
+
+```
+
+
+```{r}
+## Pairwise correlations
+cor_mat <- cor(raw_dat, use = "complete.obs")
+round(cor_mat, 3)
+
+```
+
+```{r}
+## Scatter plots
+library(GGally) 
+ggpairs(raw_dat,
+        lower = list(continuous = wrap("smooth", alpha = 0.4, color = "steelblue")),
+        diag  = list(continuous = wrap("densityDiag", fill = "steelblue", alpha = 0.5)),
+        title = "Pairs Plot")
+
+```
+
+```{r}
+#Predictor–outcome scatterplots 
+# IL-6 vs outcomes
+p1 <- ggplot(raw_dat, aes(x = IL_6, y = CVLT_CNG3)) +
+  geom_point() + geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "IL-6 vs CVLT Change")
+
+p2 <- ggplot(raw_dat, aes(x = IL_6, y = CORT_CNG3)) +
+  geom_point() + geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "IL-6 vs Cortical Thickness Change")
+
+# MCP-1 vs outcomes
+p3 <- ggplot(raw_dat, aes(x = MCP_1, y = CVLT_CNG3)) +
+  geom_point() + geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "MCP-1 vs CVLT Change")
+
+p4 <- ggplot(raw_dat, aes(x = MCP_1, y = CORT_CNG3)) +
+  geom_point() + geom_smooth(method = "lm", se = TRUE) +
+  labs(title = "MCP-1 vs Cortical Thickness Change")
+
+library(patchwork)
+(p1 | p2) / (p3 | p4)
+```
+
+```{r}
+# Normality checks (regression assumption)
+par(mfrow = c(2, 2))
+for (v in names(raw_dat)) {
+  qqnorm(raw_dat[[v]], main = paste("Q-Q:", v))
+  qqline(raw_dat[[v]], col = "red")
+}
+
+# Multicollinearity check
+cat("IL-6 vs MCP-1 r =", cor(raw_dat$IL_6, raw_dat$MCP_1), "\n")
+
+
+```
+
