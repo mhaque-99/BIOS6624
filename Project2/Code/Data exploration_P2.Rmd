@@ -11,7 +11,9 @@ library(tidyverse)
 library(pwr)
 library(knitr)
 library(kableExtra)
-
+library(powertools)
+library(ggplot2)
+library(reshape2)
 raw_dat <- read.csv(here::here("Project2/DataRaw", "PrelimData.csv"))
 ```
 
@@ -47,17 +49,17 @@ raw_dat %>%
 ## Pairwise correlations
 cor_mat <- cor(raw_dat, use = "complete.obs")
 round(cor_mat, 3)
-
 ```
 
 ```{r}
 ## Scatter plots
 library(GGally) 
-ggpairs(raw_dat,
+plot <- ggpairs(raw_dat,
         lower = list(continuous = wrap("smooth", alpha = 0.4, color = "steelblue")),
         diag  = list(continuous = wrap("densityDiag", fill = "steelblue", alpha = 0.5)),
         title = "Pairs Plot")
 
+plot
 ```
 
 ```{r}
@@ -92,9 +94,466 @@ for (v in names(raw_dat)) {
   qqline(raw_dat[[v]], col = "red")
 }
 
-# Multicollinearity check
-cat("IL-6 vs MCP-1 r =", cor(raw_dat$IL_6, raw_dat$MCP_1), "\n")
+```
 
+```{r}
+# Aim 1 planned sample size
+N_aim1 <- 175   
+
+# Aim 2 planned sample size
+N_aim2 <- 125 
+
+# Main alpha used in tables/figures
+alpha_main <- 0.05
+
+# sensitivity alphas for Aim 1
+alpha_grid_aim1 <- c(0.05, 0.025)
+
+# Target power levels
+target_power_grid <- c(0.80, 0.90)
 
 ```
+
+```{r}
+# Aim 1 model structure:
+# outcome_change ~ marker + baseline_outcome + covariates
+# Age + sex are certain; APOE, BMI, BP, hypercholesterolemia, CDR, GDS,
+# NSAID, immune conditions are candidate confounders/precision variables.
+# Final set selected based on correlation with both marker and outcome.
+# plausible range of reduced-model sizes:
+#   p = 3  : baseline outcome + age + sex
+#   p = 8  : plus 5 additional covariates
+#   p = 12  : plus 9 additional covariates
+p_ctrl_grid <- c(3, 8, 12)
+
+# Four inflammatory markers in the grant aims
+markers <- c("IL-6", "TNF-alpha", "MCP-1", "Eotaxin-1")
+
+# Six outcomes in the grant aims
+outcomes <- c("CVLT_20del", "CVLT_RecDp", "Benson_15",
+              "MST", "StoryRecall", "Cortical")
+
+```
+
+```{r}
+## Pairwise correlations
+cor_mat <- cor(raw_dat, use = "complete.obs")
+round(cor_mat, 3)
+
+# Preliminary observed marker-outcome correlations
+corr_tbl <- tibble(
+  Marker  = c("IL-6", "IL-6", "MCP-1", "MCP-1"),
+  Outcome = c("CVLT_20del", "Cortical", "CVLT_20del", "Cortical"),
+  r_marginal = c(
+    cor(raw_dat$IL_6,  raw_dat$CVLT_CNG3,  use = "complete.obs"),
+    cor(raw_dat$IL_6,  raw_dat$CORT_CNG3,  use = "complete.obs"),
+    cor(raw_dat$MCP_1, raw_dat$CVLT_CNG3,  use = "complete.obs"),
+    cor(raw_dat$MCP_1, raw_dat$CORT_CNG3,  use = "complete.obs")
+  )
+) %>%
+  mutate(abs_r_marginal = abs(r_marginal))
+
+corr_tbl
+
+# =============================================================================
+# AIM 1 EFFECT SIZE ASSUMPTIONS
+# =============================================================================
+
+# Observed absolute marginal range
+obs_min <- min(corr_tbl$abs_r_marginal)
+obs_max <- max(corr_tbl$abs_r_marginal)
+
+# Shrinkage factor to move from marginal to assumed partial correlation
+shrink_main <- 0.75
+
+# Build an assumed partial-correlation matrix for all 4 markers x 6 outcomes
+# Two observed cells are anchored to raw_dat data for IL-6 and MCP-1;
+# remaining cells are plausible values within the same general range.
+pc_matrix <- matrix(
+  c(
+  #  CVLT_20del  CVLT_RecDp Benson_15  MST       StoryRecall Cortical
+    -0.19,      -0.18,     -0.17,     -0.16,    -0.18,      -0.45,   # IL-6
+    -0.17,      -0.16,     -0.15,     -0.14,    -0.16,      -0.38,   # TNF-alpha
+    -0.24,      -0.22,     -0.20,     -0.19,    -0.22,      -0.51,   # MCP-1
+    -0.18,      -0.17,     -0.16,     -0.15,    -0.17,      -0.34    # Eotaxin-1
+  ),
+  nrow = 4, byrow = TRUE,
+  dimnames = list(markers, outcomes)
+)
+
+# These values were chosen to be slightly smaller than the observed marginal correlations and to preserve the same qualitative pattern: cortical thickness has stronger associations than memory measures.
+```
+
+```{r}
+# =============================================================================
+# AIM 1 POWER: SINGLE-MARKER MODELS
+# =============================================================================
+# Uses powertools::mlrF.partial()
+
+aim1_results <- expand.grid(
+  Marker = markers,
+  Outcome = outcomes,
+  p_ctrl = p_ctrl_grid,
+  stringsAsFactors = FALSE
+) %>%
+  rowwise() %>%
+  mutate(
+    Source = case_when(
+      Marker %in% c("IL-6", "MCP-1") & Outcome %in% c("CVLT_20del", "Cortical") ~
+        "Anchored to preliminary data",
+      TRUE ~ "Assumed within plausible range"
+    ),
+    pc_signed = pc_matrix[Marker, Outcome],
+    pc = abs(pc_signed),
+    f2 = es.fsq.partial(pc = pc)$fsq,
+    Power_alpha_0_05 = mlrF.partial(
+      N = N_aim1, p = p_ctrl, q = 1, pc = pc, alpha = 0.05
+    ),
+    Power_alpha_0_025 = mlrF.partial(
+      N = N_aim1, p = p_ctrl, q = 1, pc = pc, alpha = 0.025
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(
+    pc_signed = round(pc_signed, 3),
+    pc = round(pc, 3),
+    f2 = round(f2, 4),
+    Power_alpha_0_05 = round(Power_alpha_0_05, 3),
+    Power_alpha_0_025 = round(Power_alpha_0_025, 3)
+  )
+
+aim1_results
+
+# Wide table for cleaner presentation
+aim1_power_table <- aim1_results %>%
+  select(Marker, Outcome, p_ctrl, Power_alpha_0_05, Power_alpha_0_025)
+
+aim1_power_table
+
+
+# Minimum detectable partial correlation at fixed N
+find_min_pc <- function(target_power, N, p, q = 1, alpha = 0.05) {
+  f <- function(pc) {
+    mlrF.partial(N = N, p = p, q = q, pc = pc, alpha = alpha) - target_power
+  }
+  uniroot(f, interval = c(0.001, 0.999))$root
+}
+
+aim1_mde_tbl <- tibble(p_ctrl = p_ctrl_grid) %>%
+  mutate(
+    min_detectable_pc_80 = sapply(p_ctrl, function(p)
+      find_min_pc(target_power = 0.80, N = N_aim1, p = p, q = 1, alpha = 0.05)
+    ),
+    min_detectable_pc_90 = sapply(p_ctrl, function(p)
+      find_min_pc(target_power = 0.90, N = N_aim1, p = p, q = 1, alpha = 0.05)
+    )
+  ) %>%
+  mutate(
+    min_detectable_pc_80 = round(min_detectable_pc_80, 3),
+    min_detectable_pc_90 = round(min_detectable_pc_90, 3)
+  )
+
+aim1_mde_tbl
+
+
+
+# Required sample size table for a grid of assumed partial correlations
+find_required_N <- function(pc, p, alpha, target_power, q = 1) {
+  f <- function(N) {
+    mlrF.partial(N = N, p = p, q = q, pc = pc, alpha = alpha) - target_power
+  }
+  
+  ceiling(uniroot(f, interval = c(p + q + 10, 5000))$root)
+}
+
+aim1_pc_grid <- c(0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.50)
+
+aim1_n_tbl <- crossing(
+  pc = aim1_pc_grid,
+  p_ctrl = p_ctrl_grid,
+  alpha = c(0.05, 0.025),
+  target_power = c(0.80, 0.90)
+) %>%
+  mutate(
+    required_N = pmap_dbl(
+      list(pc, p_ctrl, alpha, target_power),
+      ~ find_required_N(
+        pc = ..1,
+        p = ..2,
+        alpha = ..3,
+        target_power = ..4,
+        q = 1
+      )
+    )
+  )
+
+
+aim1_n_tbl
+
+
+# =============================================================================
+# AIM 1 TYPE I ERROR STRATEGY
+# =============================================================================
+# - correlated outcomes and correlated markers
+# - mild correction is acceptable
+# - Bonferroni across all 24 tests is too conservative
+#
+# We therefore present primary power at alpha = 0.05 and sensitivity at 0.025.
+
+# =============================================================================
+# AIM 2 POWER VIA DIFFERENCE IN CORRELATIONS
+# =============================================================================
+# Tasha confirmed the interaction can be represented as a difference in slopes,
+# or equivalently as a difference in correlations between amyloid groups.
+#
+# For power only, use dichotomous amyloid: amyloid+ vs amyloid-
+#
+# Primary analysis in the grant can still use continuous amyloid burden.
+
+# Main amyloid prevalence scenario for power
+amyloid_splits <- tribble(
+  ~split_label, ~prop_pos, ~prop_neg,
+  "30/70",       0.30,      0.70,
+  "40/60",       0.40,      0.60,
+  "50/50",       0.50,      0.50
+)
+
+# Main effect-size scenarios for Aim 2
+aim2_scenarios <- tribble(
+  ~Scenario,   ~Outcome,   ~rho_pos, ~rho_neg,
+  "Small",     "Memory",   -0.35,    -0.15,
+  "Moderate",  "Memory",   -0.50,    -0.15,
+  "Large",     "Memory",   -0.65,    -0.10,
+  "Small",     "Cortical", -0.55,    -0.35,
+  "Moderate",  "Cortical", -0.70,    -0.35,
+  "Large",     "Cortical", -0.80,    -0.20
+)
+
+# Power at planned N for main 40/60 split
+main_split <- amyloid_splits %>% filter(split_label == "40/60")
+
+n1_main <- round(N_aim2 * main_split$prop_pos)   # amyloid+
+n2_main <- N_aim2 - n1_main                      # amyloid-
+nratio_main <- n2_main / n1_main
+
+cat(sprintf("Amyloid+ n = %d, Amyloid- n = %d, n.ratio = %.2f\n\n",
+            n1_main, n2_main, nratio_main))
+
+aim2_power_main <- aim2_scenarios %>%
+  rowwise() %>%
+  mutate(
+    delta_r = abs(rho_pos - rho_neg),
+    power = corr.2samp(
+      n1 = n1_main, n.ratio = nratio_main,
+      rho1 = rho_pos, rho2 = rho_neg,
+      alpha = alpha_main, sides = 2
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(
+    delta_r = round(delta_r, 2),
+    power = round(power, 3)
+  )
+
+print(aim2_power_main)
+
+# =============================================================================
+# AIM 2 SENSITIVITY OVER AMYLOID GROUP SPLITS
+# =============================================================================
+
+aim2_split_sensitivity <- crossing(
+  amyloid_splits,
+  aim2_scenarios
+) %>%
+  rowwise() %>%
+  mutate(
+    n_pos = round(N_aim2 * prop_pos),
+    n_neg = N_aim2 - n_pos,
+    nratio = n_neg / n_pos,
+    delta_r = abs(rho_pos - rho_neg),
+    power = corr.2samp(
+      n1 = n_pos, n.ratio = nratio,
+      rho1 = rho_pos, rho2 = rho_neg,
+      alpha = alpha_main, sides = 2
+    )
+  ) %>%
+  ungroup() %>%
+  mutate(
+    delta_r = round(delta_r, 2),
+    power = round(power, 3)
+  )
+
+
+print(aim2_split_sensitivity)
+
+
+# =============================================================================
+# AIM 2 REQUIRED SAMPLE SIZE
+# =============================================================================
+
+aim2_n_tbl <- crossing(
+  amyloid_splits,
+  aim2_scenarios,
+  target_power = target_power_grid
+) %>%
+  rowwise() %>%
+  mutate(
+    nratio = prop_neg / prop_pos,
+    n1_required = corr.2samp(
+      n1 = NULL, n.ratio = nratio,
+      rho1 = rho_pos, rho2 = rho_neg,
+      alpha = alpha_main, power = target_power, sides = 2
+    ),
+    n1_required = ceiling(n1_required),
+    n2_required = ceiling(n1_required * nratio),
+    total_N_required = n1_required + n2_required,
+    delta_r = abs(rho_pos - rho_neg)
+  ) %>%
+  ungroup() %>%
+  mutate(delta_r = round(delta_r, 2))
+
+
+print(aim2_n_tbl)
+
+
+# =============================================================================
+# AIM 2 MINIMUM DETECTABLE CORRELATION DIFFERENCE
+# =============================================================================
+# For a fixed planned sample size, find what rho_pos is needed to achieve 80%
+# power given a specified rho_neg.
+
+find_rho_pos_for_power <- function(rho_neg, n1, nratio, alpha = 0.05,
+                                   target_power = 0.80,
+                                   lower = -0.999, upper = -0.001) {
+
+  fn <- function(rho_pos) {
+    corr.2samp(
+      n1 = n1, n.ratio = nratio,
+      rho1 = rho_pos, rho2 = rho_neg,
+      alpha = alpha, sides = 2
+    ) - target_power
+  }
+
+  out <- uniroot(fn, lower = lower, upper = upper)$root
+  out
+}
+
+mde_aim2_tbl <- tibble(
+  Outcome = c("Memory", "Cortical"),
+  rho_neg = c(-0.15, -0.35)
+) %>%
+  rowwise() %>%
+  mutate(
+    rho_pos_needed = find_rho_pos_for_power(
+      rho_neg = rho_neg,
+      n1 = n1_main,
+      nratio = nratio_main,
+      alpha = alpha_main,
+      target_power = 0.80
+    ),
+    delta_r_needed = abs(rho_pos_needed - rho_neg)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    rho_pos_needed = round(rho_pos_needed, 3),
+    delta_r_needed = round(delta_r_needed, 3)
+  )
+
+print(mde_aim2_tbl)
+```
+
+```{r}
+# =============================================================================
+# AIM 2 POWER FIGURE
+# =============================================================================
+
+N_grid <- seq(80, 220, by = 5)
+
+aim2_power_curve_df <- crossing(
+  N_total = N_grid,
+  aim2_scenarios %>% filter(Outcome == "Memory"),
+  amyloid_splits %>% filter(split_label %in% c("40/60", "50/50"))
+) %>%
+  rowwise() %>%
+  mutate(
+    n_pos = round(N_total * prop_pos),
+    n_neg = N_total - n_pos,
+    nratio = n_neg / n_pos,
+    power = corr.2samp(
+      n1 = n_pos, n.ratio = nratio,
+      rho1 = rho_pos, rho2 = rho_neg,
+      alpha = alpha_main, sides = 2
+    )
+  ) %>%
+  ungroup()
+
+ggplot(aim2_power_curve_df,
+       aes(x = N_total, y = power, linetype = Scenario)) +
+  geom_line(linewidth = 1) +
+  geom_hline(yintercept = 0.80, linewidth = 0.4) +
+  geom_hline(yintercept = 0.90, linewidth = 0.4) +
+  facet_wrap(~ split_label) +
+  theme_bw() +
+  labs(
+    title = "Aim 2 power to detect group differences in correlation",
+    subtitle = "Memory outcome scenarios across amyloid prevalence assumptions",
+    x = "Total sample size",
+    y = "Power",
+    linetype = "Scenario"
+  )
+```
+
+```{r}
+# =============================================================================
+# TABLES FOR REPORT
+# =============================================================================
+
+# Preliminary correlation table
+corr_tbl %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  kable(
+    caption = "Preliminary marker-outcome correlations from the available pilot data"
+  ) %>%
+  kable_styling(full_width = FALSE)
+
+# Aim 1 power table
+aim1_results %>%
+  select(Marker, Outcome, Source, pc, f2, Power_alpha_0_05, Power_alpha_0_025) %>%
+  kable(
+    caption = "Aim 1 power for single-marker regression models under assumed partial-correlation scenarios"
+  ) %>%
+  kable_styling(full_width = FALSE)
+
+# Aim 1 sample-size table
+aim1_n_tbl %>%
+  kable(
+    caption = "Aim 1 required sample size across assumed partial correlations"
+  ) %>%
+  kable_styling(full_width = FALSE)
+
+# Aim 2 main power table
+aim2_power_main %>%
+  kable(
+    caption = "Aim 2 power for detecting differences in marker-outcome correlation by amyloid group"
+  ) %>%
+  kable_styling(full_width = FALSE)
+
+# Aim 2 split sensitivity
+aim2_split_sensitivity %>%
+  select(split_label, Scenario, Outcome, rho_pos, rho_neg, delta_r, power) %>%
+  kable(
+    caption = "Aim 2 sensitivity analysis across amyloid group prevalence scenarios"
+  ) %>%
+  kable_styling(full_width = FALSE)
+
+# Aim 2 sample size
+aim2_n_tbl %>%
+  select(split_label, Scenario, Outcome, rho_pos, rho_neg, delta_r,
+         target_power, n1_required, n2_required, total_N_required) %>%
+  kable(
+    caption = "Aim 2 required sample size to detect group-specific correlation differences"
+  ) %>%
+  kable_styling(full_width = FALSE)
+```
+
 
