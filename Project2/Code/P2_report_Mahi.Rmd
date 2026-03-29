@@ -1,0 +1,401 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+    number_sections: false
+geometry: margin=1in
+fontsize: 12pt
+linestretch: 2
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+  - \usepackage{booktabs}
+  - \usepackage{caption}
+  - \captionsetup[table]{justification=raggedright,singlelinecheck=false}
+  - \usepackage{titlesec}
+  - \titlespacing*{\section}{0pt}{6pt}{4pt}
+  - \titlespacing*{\subsection}{0pt}{4pt}{2pt}
+  - \titlespacing*{\subsubsection}{0pt}{4pt}{2pt}
+  - \setlength{\parskip}{4pt}
+  - \renewcommand{\arraystretch}{0.85}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo    = FALSE,   # hide code in final report
+  warning = FALSE,
+  message = FALSE
+)
+
+library(tidyverse)
+library(powertools)    # mlrF.partial(), corr.2samp(), es.fsq.partial()
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(GGally)
+library(patchwork)
+library(reshape2)
+
+raw_dat <- read.csv(here::here("Project2/DataRaw", "PrelimData.csv"))
+```
+
+<!-- Title -->
+**Inflammation, Amyloid Burden, and Cognitive Decline in aMCI: Data Analysis Plan and Sample Size Justification**
+
+<!-- Name -->
+**Mahfuza Haque Mahi**
+
+### Aim 1: Longitudinal Associations Between Peripheral Inflammation, Cognition, and Brain Structure
+
+**Analysis Plan:** Aim 1 will be evaluated using multiple linear regression of Year 1 change scores on baseline inflammatory markers, adjusting for baseline outcome, age, and sex. Each marker will be modeled separately across six outcomes: CVLT 20-minute delay, CVLT Recognition D-Prime, Benson Figure 15-minute delay, MST proportion correct, Story Recall 1-week delay, and mean AD-signature cortical thickness. A joint model including all markers will be explored; if multicollinearity is present, principal components analysis will be used. Additional variables (APOE genotype, BMI, blood pressure, hypercholesterolemia, NSAID use, CDR, Geriatric Depression Scale score, and immune-related health conditions) will be evaluated as confounders or precision variables, with sensitivity analyses across plausible covariate counts (p = 3-12).
+
+**Type I Error Control:**
+Twenty-four tests will be conducted (4 markers x 6 outcomes) at $\alpha = 0.05$. Because both the markers and the outcomes are correlated, the 24 tests are not independent, and Bonferroni correction is overly conservative. We therefore report primary results at $\alpha = 0.05$ and provide sensitivity analyses at $\alpha = 0.025$. Consistent patterns across outcomes and markers will be emphasized than isolated findings.
+
+**Sample Size and Power Justification:**
+Power was estimated using the function `mlrF.partial()`(powertools, R v4.3.3). The combined sample of n = 175 (125 aMCI + 50 HC) was used. Each model included one predictor of interest (q = 1) and p control variables (baseline outcome plus covariates; primary assumption p = 8, v = 165). Effect sizes were parameterized as partial correlations (|pc|). For combinations with preliminary data, observed marginal correlations were shrunk by 0.75 to approximate adjusted effects (|pc| = 0.19 to 0.51). Remaining effects were assumed within a plausible range (|pc| = 0.14 to 0.38), preserving the pattern of stronger cortical associations. The minimum detectable |pc| at 80% power was 0.208 ($\alpha = 0.05$) and 0.247 ($\alpha$ = 0.025) (Table 2). Power for cortical thickness outcomes was $\geq0.997$ across all scenarios. For memory outcomes, power ranged from 0.460–0.902 ($\alpha = 0.05$) and 0.350–0.843 ($\alpha = 0.025$), with MCP-1 showing the highest power (Table 1). Estimates should be interpreted with caution, as only a subset of effects is anchored to preliminary data.
+
+### Aim 2: Amyloid Moderation of the Inflammation–Cognition Relationship
+
+**Analysis Plan:** We will assess whether amyloid burden moderates associations between inflammatory markers and outcomes using MLR. Each model will include the inflammatory marker, continuous amyloid SUVR, their interaction, baseline outcome, and covariates from Aim 1. The primary test is the interaction term ($\alpha = 0.05$).
+
+**Type I Error Control:** No formal alpha correction will be applied to the 24 Aim 2 interaction tests. Interaction effects are expected to be small, and correction would substantially reduce power. Instead, findings will require (1) consistent direction across outcomes and markers and (2) biological plausibility (greater inflammation and amyloid associated with worse outcomes). This combination of nominal significance,
+directionality, and cross-marker consistency provides a principled guard against false positives without sacrificing power.
+
+**Sample Size and Power Justification:** Power for Aim 2 was estimated separately from Aim 1, using corr.2samp(), treating the interaction as a difference in correlations between amyloid-positive and amyloid-negative groups. The analysis was based on the aMCI sample (n = 125), assuming 40% amyloid positivity ($n_1 = 50$, $n_2 = 75$). Because no preliminary amyloid data were available, power was evaluated across plausible scenarios. Under the 40/60 split, adequate power ($\geq$80%) was achieved only for large effects ($\Delta\rho \geq 0.55$ for memory, $\geq 0.60$ for cortical thickness). For moderate effects ($\Delta\rho = 0.35$), power was 0.573 (memory) and 0.771 (cortical). The minimum detectable $\Delta\rho$ at 80% power was 0.436 (memory) and 0.359 (cortical) (Table 5). Results were similar across amyloid prevalence assumptions (Table 4), though the 30/70 split yielded the lowest power in all scenarios. Power increased appreciably
+toward a 50/50 split, and the planned sample of 125 aMCI provides adequate power
+for large interactions under all three prevalence scenarios (Figure 3). These
+limitations will be acknowledged when interpreting null interaction findings for
+memory outcomes, and confidence in any positive interaction will depend on both
+directionality and consistency across outcomes and markers.
+
+
+All analyses conducted in R (v4.3.3) using the powertools package (v1.0.0).
+
+\newpage
+
+```{r aim1-setup}
+# -- Global parameters ---------------------------------------------------------
+N_aim1          <- 175
+N_aim2          <- 125
+alpha_main      <- 0.05
+alpha_sens      <- 0.025
+target_power    <- c(0.80, 0.90)
+p_ctrl_grid     <- c(3, 8, 12)
+
+markers  <- c("IL-6", "TNF-alpha", "MCP-1", "Eotaxin-1")
+outcomes <- c("CVLT_20del", "CVLT_RecDp", "Benson_15",
+              "MST", "StoryRecall", "Cortical")
+
+# -- Preliminary correlations --------------------------------------------------
+corr_tbl <- tibble(
+  Marker  = c("IL-6",  "IL-6",      "MCP-1",    "MCP-1"),
+  Outcome = c("CVLT_20del", "Cortical", "CVLT_20del", "Cortical"),
+  r_marginal = c(
+    cor(raw_dat$IL_6,  raw_dat$CVLT_CNG3, use = "complete.obs"),
+    cor(raw_dat$IL_6,  raw_dat$CORT_CNG3, use = "complete.obs"),
+    cor(raw_dat$MCP_1, raw_dat$CVLT_CNG3, use = "complete.obs"),
+    cor(raw_dat$MCP_1, raw_dat$CORT_CNG3, use = "complete.obs")
+  )
+) %>% mutate(abs_r = round(abs(r_marginal), 3))
+
+# Shrinkage factor: marginal to partial correlation
+# Partial r is expected to be smaller than marginal r after adjusting for
+# covariates; 0.75 is a conservative shrinkage applied uniformly.
+shrink <- 0.75
+
+# -- Partial correlation matrix (4 markers  x  6 outcomes) -----------------------
+# Anchored cells: IL-6/MCP-1  x  CVLT_20del/Cortical from prelim data  x  0.75
+# Remaining cells: assumed values within the same qualitative range
+pc_matrix <- matrix(
+  c(
+  #  CVLT_20  CVLT_RD  Benson   MST     Story   Cortical
+    -0.19,   -0.18,   -0.17,  -0.16,  -0.18,  -0.45,   # IL-6
+    -0.17,   -0.16,   -0.15,  -0.14,  -0.16,  -0.38,   # TNF-alpha
+    -0.24,   -0.22,   -0.20,  -0.19,  -0.22,  -0.51,   # MCP-1
+    -0.18,   -0.17,   -0.16,  -0.15,  -0.17,  -0.34    # Eotaxin-1
+  ),
+  nrow = 4, byrow = TRUE,
+  dimnames = list(markers, outcomes)
+)
+```
+
+```{r aim1-power}
+# -- Aim 1 power: single-marker models ----------------------------------------
+aim1_results <- expand.grid(
+  Marker  = markers,
+  Outcome = outcomes,
+  p  = p_ctrl_grid,
+  stringsAsFactors = FALSE
+) %>%
+  rowwise() %>%
+  mutate(
+    Source = case_when(
+      Marker %in% c("IL-6","MCP-1") &
+        Outcome %in% c("CVLT_20del","Cortical") ~ "Anchored",
+      TRUE ~ "Assumed"
+    ),
+    pc              = abs(pc_matrix[Marker, Outcome]),
+    f2              = es.fsq.partial(pc = pc)$fsq,
+    Power_0_05      = mlrF.partial(N = N_aim1, p = p, q = 1,
+                                   pc = pc, alpha = 0.05),
+    Power_0_025     = mlrF.partial(N = N_aim1, p = p, q = 1,
+                                   pc = pc, alpha = 0.025)
+  ) %>%
+  ungroup() %>%
+  mutate(across(c(pc, f2, Power_0_05, Power_0_025), ~round(.x, 3)))
+
+# -- Display table: p = 8, both alphas ------------------------------------
+aim1_display <- aim1_results %>%
+  filter(p == 8) %>%
+  select(Marker, Outcome, Source, pc, f2, Power_0_05, Power_0_025) %>%
+  mutate(
+    Outcome = recode(Outcome,
+      CVLT_20del  = "CVLT 20'",
+      CVLT_RecDp  = "CVLT Rec D'",
+      Benson_15   = "Benson 15'",
+      StoryRecall = "Story Recall",
+      Cortical    = "Cortical Delta"
+    ),
+    Marker = recode(Marker, `TNF-alpha` = "TNF-alpha", `Eotaxin-1` = "Eotaxin-1")
+  ) %>%
+  rename(
+    `abs_pc`         = pc,
+    `f^2`            = f2,
+    `Power (alpha=0.05)`  = Power_0_05,
+    `Power (alpha=0.025)` = Power_0_025
+  )
+
+kable(aim1_display,
+      caption = paste("Estimated power for Aim 1 single-marker models,
+                      (N = 175, p = 8, q = 1, v = 165, two-tailed).,
+                      Source: A = assumed within plausible range,
+                      P = anchored to preliminary data x 0.75 shrinkage."),
+      align = c("l","l","c","c","c","c","c")) %>%
+  kable_styling(latex_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "left",
+                font_size = 12)
+```
+
+
+```{r aim1-mde}
+# -- Min detectable pc at 80% and 90% power -----------------------------------
+find_min_pc <- function(target_power, N, p, q = 1, alpha = 0.05) {
+  uniroot(
+    function(pc) mlrF.partial(N=N, p=p, q=q, pc=pc, alpha=alpha) - target_power,
+    c(0.001, 0.999)
+  )$root
+}
+
+mde_tbl <- tibble(p = p_ctrl_grid) %>%
+  mutate(
+    MDE_80_a05    = round(sapply(p, find_min_pc, target_power=0.80,
+                                  N=N_aim1, alpha=0.05),  3),
+    MDE_80_a025   = round(sapply(p, find_min_pc, target_power=0.80,
+                                  N=N_aim1, alpha=0.025), 3),
+    MDE_90_a05    = round(sapply(p, find_min_pc, target_power=0.90,
+                                  N=N_aim1, alpha=0.05),  3)
+  ) %>%
+  rename(
+    `p` = p,
+    `MDE pc (80%, alpha=0.05)` = MDE_80_a05,
+    `MDE pc (80%, alpha=0.025)` = MDE_80_a025,
+    `MDE pc (90%, alpha=0.05)` = MDE_90_a05
+  )
+
+kable(mde_tbl,
+      caption = "Minimum detectable partial correlation (MDE) at target power levels across plausible covariate counts (N = 175, q = 1).",
+      align = "c") %>%
+  kable_styling(latex_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "left")
+```
+
+
+```{r}
+# -- Aim 2 parameters ----------------------------------------------------------
+amyloid_splits <- tribble(
+  ~split_label, ~prop_pos, ~prop_neg,
+  "30/70",       0.30,      0.70,
+  "40/60",       0.40,      0.60,
+  "50/50",       0.50,      0.50
+)
+
+aim2_scenarios <- tribble(
+  ~Scenario,  ~Outcome,   ~rho_pos, ~rho_neg,
+  "Small",    "Memory",   -0.35,    -0.15,
+  "Moderate", "Memory",   -0.50,    -0.15,
+  "Large",    "Memory",   -0.65,    -0.10,
+  "Small",    "Cortical", -0.55,    -0.35,
+  "Moderate", "Cortical", -0.70,    -0.35,
+  "Large",    "Cortical", -0.80,    -0.20
+)
+
+# Primary split: 40/60
+main_split  <- amyloid_splits %>% filter(split_label == "40/60")
+n1_main     <- round(N_aim2 * main_split$prop_pos)   # amyloid-positive
+n2_main     <- N_aim2 - n1_main                       # amyloid-negative
+nratio_main <- n2_main / n1_main
+```
+
+```{r aim2-power-table, results='asis'}
+# -- Aim 2 power: primary split ------------------------------------------------
+aim2_power_main <- aim2_scenarios %>%
+  rowwise() %>%
+  mutate(
+    delta_r = round(abs(rho_pos - rho_neg), 2),
+    Power   = round(corr.2samp(n1 = n1_main, n.ratio = nratio_main,
+                               rho1 = rho_pos, rho2 = rho_neg,
+                               alpha = alpha_main, sides = 2), 3)
+  ) %>%
+  ungroup() %>%
+  rename(`rho (Amyl+)` = rho_pos, `rho (Amyl-)` = rho_neg, `Deltarho` = delta_r)
+
+kable(aim2_power_main,
+      caption = paste(
+        "Estimated power for Aim 2 interaction tests (
+        N-aMCI = 125, 40/60 amyloid split: n1 = 50 (amyloid+), n2 = 75 (amyloid-),
+        alpha = 0.05 uncorrected, two-sided)."
+      ),
+      align = c("l","l","r","r","r","r")) %>%
+  kable_styling(latex_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "left") %>%
+  column_spec(1, bold = TRUE) %>%
+  row_spec(which(aim2_power_main$Power >= 0.80),
+           , bold = FALSE)
+```
+
+```{r aim2-sensitivity, results='asis'}
+# -- Aim 2 sensitivity across amyloid splits -----------------------------------
+aim2_sens <- crossing(amyloid_splits, aim2_scenarios) %>%
+  rowwise() %>%
+  mutate(
+    n_pos   = round(N_aim2 * prop_pos),
+    n_neg   = N_aim2 - n_pos,
+    nratio  = n_neg / n_pos,
+    delta_r = round(abs(rho_pos - rho_neg), 2),
+    Power   = round(corr.2samp(n1 = n_pos, n.ratio = nratio,
+                               rho1 = rho_pos, rho2 = rho_neg,
+                               alpha = alpha_main, sides = 2), 3)
+  ) %>%
+  ungroup() %>%
+  select(split_label, Scenario, Outcome, rho_pos, rho_neg, delta_r, Power) %>%
+  pivot_wider(names_from = split_label, values_from = Power) %>%
+  rename(
+    `rho+`         = rho_pos,
+    `rho-`         = rho_neg,
+    `Deltarho`         = delta_r,
+    `Power 30/70` = `30/70`,   
+    `Power 40/60` = `40/60`,
+    `Power 50/50` = `50/50`
+  )
+
+kable(aim2_sens,
+      caption = paste(
+        "Aim 2 power sensitivity across amyloid prevalence scenarios 
+        (N = 125, alpha = 0.05, two-sided)."
+      ),
+      align = c("l","l","r","r","r","r","r","r")) %>%
+  kable_styling(latex_options = c("striped","hover","condensed"),
+                full_width = FALSE, position = "left") %>%
+  column_spec(1, bold = TRUE)
+```
+
+```{r aim2-power-curve, fig.cap = "Power curves for Aim 2 interaction detection across a range of total sample sizes. Panels show two amyloid prevalence assumptions (40/60 and 50/50 split). Horizontal reference lines mark 80% and 90% power thresholds. Only memory outcome scenarios shown for clarity.", fig.height=5}
+
+N_grid <- seq(80, 220, by = 5)
+
+aim2_curve_df <- crossing(
+  N_total = N_grid,
+  aim2_scenarios %>% filter(Outcome == "Memory"),
+  amyloid_splits %>% filter(split_label %in% c("40/60","50/50"))
+) %>%
+  rowwise() %>%
+  mutate(
+    n_pos  = round(N_total * prop_pos),
+    n_neg  = N_total - n_pos,
+    nratio = n_neg / n_pos,
+    Power  = corr.2samp(n1 = n_pos, n.ratio = nratio,
+                        rho1 = rho_pos, rho2 = rho_neg,
+                        alpha = alpha_main, sides = 2)
+  ) %>%
+  ungroup() %>%
+  mutate(Scenario = factor(Scenario, levels = c("Small","Moderate","Large")))
+
+ggplot(aim2_curve_df,
+       aes(x = N_total, y = Power,
+           linetype = Scenario, color = Scenario)) +
+  geom_line(linewidth = 1.1) +
+  geom_vline(xintercept = 125, linetype = "dotted",
+             color = "gray40", linewidth = 0.8) +
+  geom_hline(yintercept = 0.80, linewidth = 0.4, color = "gray30") +
+  geom_hline(yintercept = 0.90, linewidth = 0.4, color = "gray30") +
+  annotate("text", x = 127, y = 0.05, label = "Planned N = 125",
+           hjust = 0, size = 3, color = "gray40") +
+  annotate("text", x = 220, y = 0.82, label = "80%", size = 3, color = "gray30") +
+  annotate("text", x = 220, y = 0.92, label = "90%", size = 3, color = "gray30") +
+  facet_wrap(~split_label,
+             labeller = labeller(split_label = c(
+               "40/60" = "Amyloid split: 40% positive / 60% negative",
+               "50/50" = "Amyloid split: 50% positive / 50% negative"
+             ))) +
+  scale_color_manual(values = c("Small" = "#AED6F1",
+                                 "Moderate" = "#2E86C1",
+                                 "Large"    = "#1A5276")) +
+  scale_linetype_manual(values = c("Small" = "dashed",
+                                    "Moderate" = "solid",
+                                    "Large"    = "solid")) +
+  scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+  labs(
+    title    = "Aim 2: Power to Detect Interaction (Memory Outcomes)",
+    x        = "Total aMCI Sample Size",
+    y        = "Power",
+    linetype = "Scenario",
+    color    = "Scenario"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    legend.position = "bottom",
+    strip.text      = element_text(size = 10, face = "bold")
+  )
+```
+
+\newpage
+
+### Reproducible Research Information
+
+GitHub Repository: https://github.com/mhaque-99/BIOS6624/tree/main
+
+File name for Code: Project2/Code/P2_report_Mahi.rmd
+
+File name for Final report:Project2/Reports/P2_report_Mahi.pdf
+
+Directory for the preliminary dataset used: C:/Users/mahim/OneDrive - The University of Colorado Denver/BIOS6624/Project2/DataRaw
+
+\newpage
+
+### Appendix
+
+### Data Preparation
+
+The investigator will provide a dataset containing participants with amnestic mild cognitive impairment (aMCI; n $\approx$ 125) and healthy controls (HC; n $\approx$  50). Prior to analysis, we will assess completeness across the four primary inflammatory markers (IL-6, TNF-alpha, MCP-1, Eotaxin-1), the five episodic memory change scores, mean AD-signature cortical thickness change, and amyloid PET SUVR. Participants missing an outcome or primary predictor will be excluded. Baseline characteristics will be compared between included and excluded participants to assess potential selection bias. Differences that could affect generalizability will be noted. We confirmed that the preliminary dataset (n = 30) was complete, with no missing values across all four variables. The inflammatory markers (IL-6, MCP-1) were positively skewed and showed strong mutual correlation (r = 0.93), while both markers were negatively associated with CVLT change and AD-signature cortical thickness change, with cortical thickness showing stronger associations (Figure 2).
+
+```{r prelim-plots, fig.cap="Pairwise scatterplot matrix for the preliminary dataset. Diagonal panels show kernel density estimates; lower panels show scatterplots with linear smoother.", fig.height=6}
+raw_dat_renamed <- raw_dat %>%
+  rename(`CVLT Change` = CVLT_CNG3,
+         `Cortical Change`  = CORT_CNG3,
+         `IL-6`        = IL_6,
+         `MCP-1`       = MCP_1)
+
+ggpairs(raw_dat_renamed,
+        lower = list(continuous = wrap("smooth", alpha = 0.5,
+                                       color = "steelblue", se = TRUE)),
+        diag  = list(continuous = wrap("densityDiag",
+                                       fill = "steelblue", alpha = 0.4)),
+        upper = list(continuous = wrap("cor", size = 4)),
+        title = "Preliminary Data: Pairwise Relationships") +
+  theme_bw(base_size = 12)
+```
+
+
