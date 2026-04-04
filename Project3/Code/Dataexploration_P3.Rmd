@@ -1,0 +1,337 @@
+---
+title: "Data exploration_P3"
+author: "Mahfuza Haque Mahi"
+date: "2026-04-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pwr)
+library(knitr)
+library(kableExtra)
+library(powertools)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(tableone)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+```
+
+
+```{r}
+# Initial overview of the dataset
+str(df)
+head(df)
+nrow(df)
+summary(df)
+```
+
+```{r}
+# View the Missingness pattern of variables:
+naniar::gg_miss_var(df)
+naniar::vis_miss(df)
+```
+
+```{r}
+# Check structure
+# Number of visits per subject
+table(table(df$RANDID))
+```
+
+```{r}
+# ============================================================
+# FRAMINGHAM HEART STUDY - Initial Data Exploration
+# ===========================================================
+# Dataset Dimension
+dim(df)
+
+# Variable Names
+names(df)
+
+# Data Types 
+str(df)
+
+
+# ── BASIC STRUCTURE ──────────────────────────────────────
+
+# Number of unique participants
+cat("Unique participants:", n_distinct(df$RANDID), "\n")
+
+# Observations per period
+table(df$PERIOD)
+
+# Participants by sex (period 1 only)
+df %>% filter(PERIOD == 1) %>% count(SEX) %>%
+  mutate(SEX = ifelse(SEX == 1, "Men", "Women"))
+
+# How many exams did each participant attend?
+df %>%
+  count(RANDID) %>%
+  count(n, name = "participants") %>%
+  rename(exams_attended = n)
+
+
+# ── MISSING DATA ─────────────────────────────────────────
+
+# Overall missingness summary (all periods)
+
+miss_summary <- df %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+  mutate(pct_missing = round(n_missing / nrow(df) * 100, 1)) %>%
+  arrange(desc(n_missing))
+print(miss_summary, n = 40)
+
+# Missingness at BASELINE only (Period 1)
+base_miss <- df %>%
+  filter(PERIOD == 1) %>%
+  summarise(across(everything(), ~sum(is.na(.)))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "n_missing") %>%
+  mutate(pct_missing = round(n_missing / nrow(df[df$PERIOD==1,]) * 100, 1)) %>%
+  filter(n_missing > 0) %>%
+  arrange(desc(n_missing))
+print(base_miss)
+```
+
+
+```{r}
+# ── TABLE 1 – BASELINE CHARACTERISTICS BY SEX ────────────
+
+baseline <- df %>%
+  filter(PERIOD == 1) %>%
+  mutate(
+    SEX_label   = factor(SEX, labels = c("Men", "Women")),
+    CURSMOKE    = factor(CURSMOKE, labels = c("No", "Yes")),
+    DIABETES    = factor(DIABETES, labels = c("No", "Yes")),
+    BPMEDS      = factor(BPMEDS,   labels = c("No", "Yes")),
+    PREVCHD     = factor(PREVCHD,  labels = c("No", "Yes")),
+    PREVSTRK    = factor(PREVSTRK, labels = c("No", "Yes")),
+    PREVHYP     = factor(PREVHYP,  labels = c("No", "Yes")),
+    STROKE      = factor(STROKE,   labels = c("No", "Yes")),
+    DEATH       = factor(DEATH,    labels = c("No", "Yes"))
+  )
+
+cont_vars <- c("AGE","SYSBP","DIABP","TOTCHOL","BMI",
+               "GLUCOSE","HEARTRTE","CIGPDAY")
+cat_vars  <- c("CURSMOKE","DIABETES","BPMEDS",
+               "PREVCHD","PREVSTRK","PREVHYP","STROKE","DEATH")
+
+tab1 <- CreateTableOne(
+  vars     = c(cont_vars, cat_vars),
+  factorVars = cat_vars,
+  strata   = "SEX_label",
+  data     = baseline,
+  addOverall = TRUE
+)
+
+print(tab1, showAllLevels = FALSE, smd = TRUE)
+```
+
+```{r}
+# ── OUTCOME FREQUENCIES ──────────────────────────────────
+
+cat("\n── Stroke & Death by Sex (full follow-up) ──\n")
+baseline %>%
+  group_by(SEX_label) %>%
+  summarise(
+    N            = n(),
+    Stroke_n     = sum(STROKE == "Yes", na.rm = TRUE),
+    Stroke_pct   = round(mean(STROKE == "Yes", na.rm = TRUE) * 100, 1),
+    Death_n      = sum(DEATH == "Yes", na.rm = TRUE),
+    Death_pct    = round(mean(DEATH == "Yes", na.rm = TRUE) * 100, 1)
+  )
+
+# 10-year stroke outcome (<=3652 days)
+baseline <- baseline %>%
+  mutate(
+    stroke_10y = as.integer(STROKE == "Yes" & TIMESTRK <= 3652),
+    time_10y   = pmin(TIMESTRK, 3652)
+  )
+
+cat("\n── 10-Year Stroke Events by Sex ──\n")
+baseline %>%
+  group_by(SEX_label) %>%
+  summarise(
+    N          = n(),
+    Events     = sum(stroke_10y, na.rm = TRUE),
+    Rate_pct   = round(mean(stroke_10y, na.rm = TRUE) * 100, 2)
+  )
+
+
+# ── DISTRIBUTIONS OF CONTINUOUS VARIABLES ────────────────
+
+cont_long <- baseline %>%
+  select(SEX_label, all_of(cont_vars)) %>%
+  pivot_longer(-SEX_label, names_to = "variable", values_to = "value")
+
+# Histograms by sex
+ggplot(cont_long, aes(x = value, fill = SEX_label)) +
+  geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  facet_wrap(~variable, scales = "free", ncol = 4) +
+  scale_fill_manual(values = c("steelblue", "tomato")) +
+  labs(title = "Distribution of Continuous Variables at Baseline by Sex",
+       fill = "Sex", x = NULL, y = "Count") +
+  theme_bw(base_size = 11)
+
+# Boxplots: stroke_10y vs each continuous variable
+baseline_long <- baseline %>%
+  mutate(Stroke_10y = factor(stroke_10y, labels = c("No Stroke","Stroke"))) %>%
+  select(SEX_label, Stroke_10y, all_of(cont_vars)) %>%
+  pivot_longer(-c(SEX_label, Stroke_10y), names_to = "variable", values_to = "value")
+
+ggplot(baseline_long, aes(x = Stroke_10y, y = value, fill = Stroke_10y)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.7) +
+  facet_grid(SEX_label ~ variable, scales = "free_y") +
+  scale_fill_manual(values = c("steelblue", "tomato")) +
+  labs(title = "Continuous Risk Factors by 10-Year Stroke Outcome and Sex",
+       x = NULL, y = NULL, fill = NULL) +
+  theme_bw(base_size = 10) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+# ── CORRELATION MATRIX (continuous vars, baseline) ────────
+
+cor_mat <- baseline %>%
+  select(all_of(cont_vars), stroke_10y) %>%
+  cor(use = "pairwise.complete.obs")
+
+corrplot(cor_mat,
+         method  = "color",
+         type    = "upper",
+         addCoef.col = "black",
+         tl.col  = "black",
+         tl.cex  = 0.8,
+         number.cex = 0.7,
+         title   = "Correlation Matrix – Continuous Variables at Baseline",
+         mar     = c(0, 0, 2, 0))
+
+
+# ── RISK FACTOR CHANGE ACROSS PERIODS ────────────────────
+
+# Continuous variables: means by period and sex
+period_means <- df %>%
+  filter(!is.na(SYSBP)) %>%
+  mutate(SEX_label = ifelse(SEX == 1, "Men", "Women")) %>%
+  group_by(SEX_label, PERIOD) %>%
+  summarise(across(all_of(c("SYSBP","DIABP","TOTCHOL","BMI",
+                             "GLUCOSE","HEARTRTE","CIGPDAY")),
+                   ~mean(.x, na.rm = TRUE)),
+            .groups = "drop")
+
+print(period_means)
+
+# Line plots of mean risk factors across periods
+period_means %>%
+  pivot_longer(-c(SEX_label, PERIOD), names_to = "variable", values_to = "mean") %>%
+  ggplot(aes(x = PERIOD, y = mean, color = SEX_label, group = SEX_label)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_wrap(~variable, scales = "free_y", ncol = 4) +
+  scale_color_manual(values = c("steelblue", "tomato")) +
+  scale_x_continuous(breaks = 1:3) +
+  labs(title = "Mean Risk Factor Values Across Exam Periods by Sex",
+       x = "Exam Period", y = "Mean Value", color = "Sex") +
+  theme_bw(base_size = 11)
+
+# Binary/categorical vars across periods
+cat_period <- df %>%
+  mutate(SEX_label = ifelse(SEX == 1, "Men", "Women")) %>%
+  group_by(SEX_label, PERIOD) %>%
+  summarise(
+    Smoker_pct   = mean(CURSMOKE == 1, na.rm = TRUE) * 100,
+    Diabetic_pct = mean(DIABETES == 1, na.rm = TRUE) * 100,
+    BPmeds_pct   = mean(BPMEDS == 1,   na.rm = TRUE) * 100,
+    PrevHyp_pct  = mean(PREVHYP == 1,  na.rm = TRUE) * 100,
+    PrevCHD_pct  = mean(PREVCHD == 1,  na.rm = TRUE) * 100,
+    .groups = "drop"
+  )
+
+print(cat_period)
+
+cat_period %>%
+  pivot_longer(-c(SEX_label, PERIOD), names_to = "variable", values_to = "pct") %>%
+  ggplot(aes(x = PERIOD, y = pct, color = SEX_label, group = SEX_label)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  facet_wrap(~variable, scales = "free_y", ncol = 3) +
+  scale_color_manual(values = c("steelblue", "tomato")) +
+  scale_x_continuous(breaks = 1:3) +
+  labs(title = "Prevalence of Binary Risk Factors Across Exam Periods by Sex",
+       x = "Exam Period", y = "Percent (%)", color = "Sex") +
+  theme_bw(base_size = 11)
+
+
+# ── PAIRED CHANGE ANALYSIS (completers only) ─────────────
+
+# Participants attending all 3 exams
+completers <- df %>%
+  group_by(RANDID) %>%
+  filter(n() == 3) %>%
+  ungroup()
+
+cat("Completers (all 3 exams):", n_distinct(completers$RANDID), "\n")
+
+# Paired t-tests: Period 1 vs Period 3, by sex
+paired_vars <- c("SYSBP","DIABP","TOTCHOL","BMI","GLUCOSE","HEARTRTE","CIGPDAY")
+
+paired_results <- map_dfr(paired_vars, function(var) {
+  map_dfr(c(1, 2), function(sex_code) {
+    wide <- completers %>%
+      filter(SEX == sex_code) %>%
+      select(RANDID, PERIOD, all_of(var)) %>%
+      pivot_wider(names_from = PERIOD, values_from = all_of(var),
+                  names_prefix = "P") %>%
+      drop_na()
+    
+    if (nrow(wide) > 5) {
+      test <- t.test(wide$P3, wide$P1, paired = TRUE)
+      tibble(
+        Variable   = var,
+        Sex        = ifelse(sex_code == 1, "Men", "Women"),
+        N_pairs    = nrow(wide),
+        Mean_P1    = mean(wide$P1, na.rm = TRUE),
+        Mean_P3    = mean(wide$P3, na.rm = TRUE),
+        Mean_diff  = mean(wide$P3 - wide$P1, na.rm = TRUE),
+        p_value    = test$p.value
+      )
+    }
+  })
+})
+
+print(paired_results %>% mutate(across(where(is.numeric), ~round(.x, 3))), n = 40)
+
+
+# ──PREVALENT DISEASE AT BASELINE ───────────────────────
+
+baseline %>%
+  group_by(SEX_label) %>%
+  summarise(
+    N              = n(),
+    PrevStroke_n   = sum(PREVSTRK == "Yes", na.rm = TRUE),
+    PrevCHD_n      = sum(PREVCHD  == "Yes", na.rm = TRUE),
+    PrevMI_n       = sum(PREVMI   == 1,     na.rm = TRUE),
+    PrevHyp_n      = sum(PREVHYP  == "Yes", na.rm = TRUE),
+    PrevAP_n       = sum(PREVAP   == 1,     na.rm = TRUE)
+  )
+
+
+# ── TIME-TO-EVENT SUMMARY ────────────────────────────────
+
+baseline %>%
+  group_by(SEX_label) %>%
+  summarise(
+    Median_TIMESTRK = median(TIMESTRK, na.rm = TRUE),
+    Min_TIMESTRK    = min(TIMESTRK,    na.rm = TRUE),
+    Max_TIMESTRK    = max(TIMESTRK,    na.rm = TRUE),
+    N_censored_10y  = sum(TIMESTRK > 3652 & STROKE == "No", na.rm = TRUE),
+    N_event_10y     = sum(stroke_10y,   na.rm = TRUE),
+    N_died_before10 = sum(TIMEDTH <= 3652 & STROKE != "Yes", na.rm = TRUE)
+  )
+```
+
