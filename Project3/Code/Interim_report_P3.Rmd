@@ -38,26 +38,18 @@ df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
 
 **Data Analysis Plan**
 
-**Introduction**
-The Framingham Heart Study is a long-term prospective cohort study initiated in 1948 to investigate the etiology of cardiovascular disease in a community population in Framingham, Massachusetts. The subset of data used here includes 4,434 participants examined across three clinic visits approximately 6 years apart (roughly 1956–1968), with up to 24 years of follow-up for cardiovascular outcomes including stroke, myocardial infarction, angina, and death. The purpose of this report is to develop the analysis plan and present preliminary descriptive results to address the following hypotheses:
-
-1. Baseline risk factors including age, diabetes status, systolic blood pressure, and potentially prevalent coronary heart disease, antihypertensive medication use, smoking status, total cholesterol, and BMI are independently associated with time to incident stroke within 10 years of baseline, and these associations differ between males and females.
-
-2. Systolic blood pressure and diabetes status change meaningfully across the three examination periods, suggesting that a time-varying covariate approach may provide a more accurate characterization of stroke risk than a baseline-only model in future analyses.
-
+**Introduction:**
+The Framingham Heart Study is a long-term prospective cohort study initiated in 1948 to investigate the etiology of cardiovascular disease in a community population in Framingham, Massachusetts. The subset of data used here includes 4,434 participants examined across three clinic visits approximately 6 years apart (roughly 1956–1968), with up to 24 years of follow-up for cardiovascular outcomes including stroke, myocardial infarction, angina, and death. The purpose of this report is to develop the analysis plan and present preliminary descriptive results to address the hypotheses: (1) Baseline risk factors including age, diabetes status, systolic blood pressure, and potentially prevalent coronary heart disease, antihypertensive medication use, smoking status, total cholesterol, and BMI are independently associated with time to incident stroke within 10 years of baseline, and these associations differ between males and females. (2) Systolic blood pressure and diabetes status change meaningfully across the three examination periods, suggesting that a time-varying covariate approach may provide a more accurate characterization of stroke risk than a baseline-only model in future analyses.
 
 **Methods**
 
-**Data Cleaning:** The analytic cohort was restricted to Period 1 (baseline) observations among participants free of prior stroke at baseline, yielding an initial sample of 4,434 participants. Candidate covariates include age, systolic blood pressure, BMI, total cholesterol, diabetes status, current smoking status, antihypertensive medication use, and prevalent coronary heart disease. A complete case analysis will be performed, excluding participants with missing values on any of these variables. The final analytic sample consisted of 4,275 participants (1,897 males, 2,378 females). Follow-up time was measured in days from baseline and capped at 365.25 × 10 = 3,652.5 days, using 365.25 days per year to account for leap years, restricting the analysis to 10 years of follow-up. Participants who experienced a non-stroke event (including death) or remained event-free beyond 10 years were censored. Values that appear biologically implausible will be reviewed and excluded as appropriate.
+**Data Cleaning:** The analytic cohort was restricted to Period 1 (baseline) observations among participants free of prior stroke at baseline, yielding an initial sample of 4,434 participants. Candidate covariates include age, systolic blood pressure, BMI, total cholesterol, diabetes status, current smoking status, antihypertensive medication use, and prevalent coronary heart disease. A complete case analysis was performed, yeilding a final analytic sample of 4,275 participants (1,897 males, 2,378 females). Follow-up time was measured in days from baseline and capped at 365.25 × 10 = 3,652.5 days, using 365.25 days per year to account for leap years, to restrict the analysis to 10 years. Participants who experienced a non-stroke event (including death) or remained event-free beyond 10 years were treated as censored. Biologically implausible values will be reviewed and excluded.
 
-**Data Analysis:** Cox proportional hazards regression will be used to model time to incident stroke using baseline covariates only; no time-varying covariates will be included. Competing risks (e.g., death, myocardial infarction) will not be formally modeled and all non-stroke events will be treated as censored. This will be acknowledged as a limitation in the final report. Prior to modeling, the correlation between systolic blood pressure and antihypertensive medication use will be assessed, as these variables are likely correlated and co-inclusion may introduce collinearity. This will inform final covariate selection. All analyses will be stratified by sex, with separate models fit for males and females. The final covariate sets for each sex need not be identical, as the goal is to identify risk factors most predictive of stroke within each sex. The proportional hazards assumption will be evaluated using Schoenfeld residuals. Based on the final models, 10-year stroke probabilities will be estimated for clinically meaningful risk profiles. To inform discussion of whether a time-varying covariate model would be warranted in future analyses, mean systolic blood pressure and diabetes prevalence will be summarized descriptively across all three examination periods separately by sex. No formal testing is planned for this component; findings will be used to discuss implications of using baseline-only covariates and how results may differ with a time-varying approach.
+**Data Analysis:** Cox proportional hazards regression will be used to model time to incident stroke using baseline covariates only. Competing risks (e.g., death, myocardial infarction) will not be formally modeled and all non-stroke events will be treated as censored. This will be noted as a limitation. The correlation between systolic blood pressure and antihypertensive medication use will be assessed to evaluate portential collinearity and inform final covariate selection. All analyses will be stratified by sex, with separate models fit for males and females. The final covariate sets may differ between sexes as the goal is to identify risk factors most predictive of stroke within each sex. The proportional hazards assumption will be evaluated using Schoenfeld residuals. Based on the final models, 10-year stroke probabilities will be estimated for clinically meaningful risk profiles. To inform future analyses, systolic blood pressure and diabetes prevalence will be summarized descriptively across examination periods by sex to assess potential time-varying effects. 
 
-**Preliminary Descriptive Analysis:** Baseline characteristics were summarized in Table 1 stratified by sex. Continuous variables are reported as mean (SD) and median [min, max]; categorical variables are reported as count (%). To assess the relationship between systolic blood pressure and antihypertensive medication use, a boxplot was produced stratified by sex (Figure 1). The distribution of baseline systolic blood pressure was examined by sex (Figure 2). The relationship between age and systolic blood pressure was explored using a scatterplot with a loess smoother stratified by sex (Figure 3). All analyses were conducted in R.
+**Preliminary Descriptive Analysis:** Baseline characteristics were summarized in Table 1 stratified by sex. with continuous variables reported as mean (SD) and median [min, max] and categorical variables as count (%). Exploratory figures include a boxplot of systolic blood pressure by antihypertensive medication use (Figure 1), histograms of systolic blood pressure by sex (Figure 2), and a scatterplot of age versus systolic blood pressure with a loess smoother (Figure 3). All analyses were conducted using R.
 
-
-\newpage
-```{r, include=F, echo =F}
-df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+```{r, echo = F}
 names(df) <- tolower(names(df))
 # ============================================================
 # Restrict to Baseline (Period 1), Exclude Prior Stroke
@@ -66,7 +58,7 @@ baseline <- df %>%
   filter(period == 1,
          prevstrk == 0)   # exclusion only — not used as a covariate
 
-cat("N after baseline restriction and prior stroke exclusion:", nrow(baseline), "\n")
+# cat("N after baseline restriction and prior stroke exclusion:", nrow(baseline), "\n") ## 4402
 
 # ============================================================
 #  Define 10-Year Outcome
@@ -91,8 +83,8 @@ baseline_cc <- baseline %>%
   select(all_of(analysis_vars)) %>%
   drop_na()
 
-cat("N complete cases:", nrow(baseline_cc), "\n")
-cat("N excluded due to missing:", nrow(baseline) - nrow(baseline_cc), "\n")
+#cat("N complete cases:", nrow(baseline_cc), "\n") ---- 4275
+#cat("N excluded due to missing:", nrow(baseline) - nrow(baseline_cc), "\n") ---- 127
 
 # ============================================================
 # Factor Coding with Labels
@@ -117,9 +109,7 @@ label(baseline_cc$cursmoke) <- "Current Smoker"
 label(baseline_cc$bpmeds)   <- "Antihypertensive Medication"
 label(baseline_cc$stroke10) <- "Incident Stroke within 10 Years"
 label(baseline_cc$chd)         <- "Coronary Heart Disease"
-```
 
-```{r, echo = F, results='asis'}
 # ============================================================
 #  Table 1 — Stratified by Sex
 # ============================================================
@@ -127,11 +117,11 @@ table1(~ age + sysbp + bmi + totchol + chd +
          diabetes + cursmoke + bpmeds + stroke10 | sex_label,
        data = baseline_cc,
        overall = "Overall",
-       caption = "Table 1. Baseline Characteristics by Sex")
+       caption = "Baseline Characteristics by Sex")
 ```
 
 
-```{r, echo = F}
+```{r, echo = F, warning = F, message = F}
 # Consistent theme for all plots
 theme_report <- theme_bw(base_size = 12) +
   theme(
@@ -196,4 +186,3 @@ fig3 <- ggplot(baseline_cc, aes(x = age, y = sysbp, color = sex_label)) +
 
 fig3
 ```
-
