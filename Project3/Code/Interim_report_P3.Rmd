@@ -27,10 +27,12 @@ df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
 
 **Introduction**
 The Framingham Heart Study is a long-term prospective cohort study initiated in 1948 to investigate the etiology of cardiovascular disease in a community population in Framingham, Massachusetts. The subset of data used here includes 4,434 participants examined across three clinic visits approximately 6 years apart (roughly 1956–1968), with up to 24 years of follow-up for cardiovascular outcomes including stroke, myocardial infarction, angina, and death.
+
 The primary goal of this analysis is to identify baseline risk factors associated with incident stroke and to estimate the 10-year probability of stroke, stratified by sex, using separate Cox proportional hazards models for males and females. A secondary descriptive aim is to characterize how systolic blood pressure and diabetes status change across the three examination periods, to inform discussion of whether a time-varying covariate approach would be warranted in future analyses.
 
 **Methods**
 
+**Data Cleaning**
 Cohort Definition and Exclusions: The analytic cohort was restricted to Period 1 (baseline) observations among participants free of prior stroke at baseline, yielding an initial sample of 4,434 participants. A complete case analysis was performed, excluding participants with missing values on any candidate covariate. The final analytic sample consisted of 4,275 participants (1,897 males, 2,378 females).
 
 Outcome and Follow-up Time: The outcome of interest is incident stroke. Follow-up time is measured in days from baseline and capped at 365.25 × 10 = 3,652.5 days to restrict the analysis to 10 years of follow-up. Participants who experienced a non-stroke event (including death) or remained event-free beyond 10 years will be treated as censored. Competing risks will not be formally modeled; all non-stroke events will be treated as censored observations. This will be noted as a limitation in the final report.
