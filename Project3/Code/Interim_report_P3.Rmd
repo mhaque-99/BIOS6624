@@ -1,0 +1,186 @@
+---
+title: "Data analysis plan_P3"
+author: "Mahfuza Haque Mahi"
+date: "2026-04-04"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(table1)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(powertools)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(tableone)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+```
+
+
+**Introduction**
+The Framingham Heart Study is a long-term prospective cohort study initiated in 1948 to investigate the etiology of cardiovascular disease in a community population in Framingham, Massachusetts. The subset of data used here includes 4,434 participants examined across three clinic visits approximately 6 years apart (roughly 1956–1968), with up to 24 years of follow-up for cardiovascular outcomes including stroke, myocardial infarction, angina, and death.
+The primary goal of this analysis is to identify baseline risk factors associated with incident stroke and to estimate the 10-year probability of stroke, stratified by sex, using separate Cox proportional hazards models for males and females. A secondary descriptive aim is to characterize how systolic blood pressure and diabetes status change across the three examination periods, to inform discussion of whether a time-varying covariate approach would be warranted in future analyses.
+
+**Methods**
+
+Cohort Definition and Exclusions: The analytic cohort was restricted to Period 1 (baseline) observations among participants free of prior stroke at baseline, yielding an initial sample of 4,434 participants. A complete case analysis was performed, excluding participants with missing values on any candidate covariate. The final analytic sample consisted of 4,275 participants (1,897 males, 2,378 females).
+
+Outcome and Follow-up Time: The outcome of interest is incident stroke. Follow-up time is measured in days from baseline and capped at 365.25 × 10 = 3,652.5 days to restrict the analysis to 10 years of follow-up. Participants who experienced a non-stroke event (including death) or remained event-free beyond 10 years will be treated as censored. Competing risks will not be formally modeled; all non-stroke events will be treated as censored observations. This will be noted as a limitation in the final report.
+
+Covariates: Baseline covariates include age, systolic blood pressure, BMI, total cholesterol, diabetes status, current smoking status, and antihypertensive medication use. Given the known relationship between systolic blood pressure and antihypertensive medication use, the correlation between these two variables was assessed visually prior to modeling to evaluate potential collinearity, which will inform final covariate selection.
+
+Planned Statistical Analysis: Cox proportional hazards regression will be used to model time to incident stroke using baseline covariates only. All analyses will be stratified by sex, with separate models fit for males and females. The final covariate sets for each sex need not be identical, as the goal is to identify the risk factors most predictive of stroke within each sex. The proportional hazards assumption will be evaluated using Schoenfeld residuals. Based on the final model, 10-year stroke probabilities will be estimated for clinically meaningful risk profiles defined by combinations of key baseline characteristics.
+
+Descriptive Analysis of Time-Varying Risk Factors: To inform discussion of whether a time-varying covariate model would be warranted in future analyses, mean systolic blood pressure and diabetes prevalence will be summarized descriptively across all three examination periods, separately by sex. No formal testing is planned for this component. Findings will be used to discuss the implications of using baseline-only covariates in the Cox model and how results may differ if time-varying covariates were incorporated.
+
+Preliminary Descriptive Analysis: Baseline characteristics were summarized in Table 1 stratified by sex. Continuous variables are reported as mean (SD) and median [min, max]; categorical variables are reported as count (%). To assess the relationship between systolic blood pressure and antihypertensive medication use, a boxplot was produced stratified by sex (Figure 1). The distribution of baseline systolic blood pressure was examined by sex (Figure 2). The relationship between age and systolic blood pressure was explored using a scatterplot with a loess smoother stratified by sex (Figure 3). All analyses were conducted in R.
+
+```{r, include=F, echo =F}
+df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+names(df) <- tolower(names(df))
+# ============================================================
+# Restrict to Baseline (Period 1), Exclude Prior Stroke
+# ============================================================
+baseline <- df %>%
+  filter(period == 1,
+         prevstrk == 0)   # exclusion only — not used as a covariate
+
+cat("N after baseline restriction and prior stroke exclusion:", nrow(baseline), "\n")
+
+# ============================================================
+#  Define 10-Year Outcome
+# ============================================================
+cutoff <- 365.25 * 10  # 3652.5 days
+
+baseline <- baseline %>%
+  mutate(
+    time10   = ifelse(timestrk > cutoff, cutoff, timestrk),
+    stroke10 = ifelse(timestrk <= cutoff & stroke == 1, 1, 0)
+  )
+
+# ============================================================
+#  Select Candidate Covariates and Complete Case Analysis
+# ============================================================
+covars <- c("age", "diabetes", "sysbp",
+            "bpmeds", "cursmoke", "totchol", "bmi", "prevchd")
+
+analysis_vars <- c("randid", "sex", "time10", "stroke10", covars)
+
+baseline_cc <- baseline %>%
+  select(all_of(analysis_vars)) %>%
+  drop_na()
+
+cat("N complete cases:", nrow(baseline_cc), "\n")
+cat("N excluded due to missing:", nrow(baseline) - nrow(baseline_cc), "\n")
+
+# ============================================================
+# Factor Coding with Labels
+# ============================================================
+baseline_cc <- baseline_cc %>%
+  mutate(
+    sex_label = factor(sex, levels = c(1, 2), labels = c("Male", "Female")),
+    diabetes  = factor(diabetes, levels = c(0, 1), labels = c("No", "Yes")),
+    bpmeds    = factor(bpmeds,   levels = c(0, 1), labels = c("No", "Yes")),
+    cursmoke  = factor(cursmoke, levels = c(0, 1), labels = c("No", "Yes")),
+    stroke10  = factor(stroke10, levels = c(0, 1), labels = c("No", "Yes")),
+    chd = factor(prevchd, levels = c(0, 1), labels = c("No", "Yes"))
+  )
+
+# Apply variable labels for table1
+label(baseline_cc$age)      <- "Age (years)"
+label(baseline_cc$sysbp)    <- "Systolic BP (mmHg)"
+label(baseline_cc$bmi)      <- "BMI (kg/m²)"
+label(baseline_cc$totchol)  <- "Total Cholesterol (mg/dL)"
+label(baseline_cc$diabetes) <- "Diabetes"
+label(baseline_cc$cursmoke) <- "Current Smoker"
+label(baseline_cc$bpmeds)   <- "Antihypertensive Medication"
+label(baseline_cc$stroke10) <- "Incident Stroke within 10 Years"
+label(baseline_cc$chd)         <- "Coronary Heart Disease"
+```
+
+```{r, echo = F, results='asis'}
+# ============================================================
+#  Table 1 — Stratified by Sex
+# ============================================================
+table1(~ age + sysbp + bmi + totchol + chd + 
+         diabetes + cursmoke + bpmeds + stroke10 | sex_label,
+       data = baseline_cc,
+       overall = "Overall",
+       caption = "Table 1. Baseline Characteristics by Sex")
+```
+
+
+```{r}
+# Consistent theme for all plots
+theme_report <- theme_bw(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13, hjust = 0.5),
+    plot.caption = element_text(size = 9, hjust = 0),
+    strip.text = element_text(face = "bold"),
+    legend.position = "bottom"
+  )
+
+# ------------------------------------------------------------
+# Figure 1: Systolic BP by antihypertensive medication use
+# ------------------------------------------------------------
+fig1 <- ggplot(baseline_cc, aes(x = bpmeds, y = sysbp, fill = bpmeds)) +
+  geom_boxplot(alpha = 0.8, width = 0.65, outlier.alpha = 0.35) +
+  facet_wrap(~ sex_label) +
+  labs(
+    title = "Figure 1. Baseline Systolic Blood Pressure by Antihypertensive Medication Use",
+    x = "Antihypertensive Medication Use",
+    y = "Systolic Blood Pressure (mmHg)"
+  ) +
+  scale_fill_manual(values = c("No" = "#9ecae1", "Yes" = "#3182bd")) +
+  guides(fill = "none") +
+  theme_report
+
+fig1
+
+# ------------------------------------------------------------
+# Figure 2: Distribution of systolic BP at baseline
+# ------------------------------------------------------------
+fig2 <- ggplot(baseline_cc, aes(x = sysbp, fill = sex_label)) +
+  geom_histogram(
+    bins = 28,
+    color = "white",
+    alpha = 0.85
+  ) +
+  facet_wrap(~ sex_label, ncol = 1) +
+  labs(
+    title = "Figure 2. Distribution of Baseline Systolic Blood Pressure by Sex",
+    x = "Systolic Blood Pressure (mmHg)",
+    y = "Count"
+  ) +
+  scale_fill_manual(values = c("Male" = "#6baed6", "Female" = "#fb6a4a")) +
+  guides(fill = "none") +
+  theme_report
+
+fig2
+
+# ------------------------------------------------------------
+# Figure 3: Age vs systolic BP
+# ------------------------------------------------------------
+fig3 <- ggplot(baseline_cc, aes(x = age, y = sysbp, color = sex_label)) +
+  geom_point(alpha = 0.35, size = 1.6) +
+  geom_smooth(method = "loess", se = TRUE, linewidth = 1) +
+  labs(
+    title = "Figure 3. Relationship Between Age and Baseline Systolic Blood Pressure",
+    x = "Age (years)",
+    y = "Systolic Blood Pressure (mmHg)",
+    color = "Sex"
+  ) +
+  scale_color_manual(values = c("Male" = "#2171b5", "Female" = "#cb181d")) +
+  theme_report
+
+fig3
+```
+
