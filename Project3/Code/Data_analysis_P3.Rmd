@@ -1,0 +1,542 @@
+---
+title: "Data analysis_P3"
+author: "Mahfuza Haque Mahi"
+date: "2026-04-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pwr)
+library(knitr)
+library(kableExtra)
+library(powertools)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(tableone)
+library(gridExtra)
+library(here)
+library(table1)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(survival)
+library(survminer)
+library(glmnet)
+library(car)
+df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+```
+
+
+```{r}
+# -------------------------
+# Create baseline dataset
+# -------------------------
+# Period 1 only, and exclude prior stroke at baseline
+df_base <- df %>%
+  filter(PERIOD == 1, PREVSTRK == 0)
+
+# -------------------------
+# Create variables for Table 1
+# -------------------------
+# Keep missing values in the dataset
+# Recode variables for readability
+# Also create a 10-year incident stroke indicator for descriptive Table 1
+
+df_table1 <- df_base %>%
+  mutate(
+    sex = factor(SEX, levels = c(1, 2), labels = c("Male", "Female")),
+
+    curr_smoke = factor(CURSMOKE,
+                        levels = c(0, 1),
+                        labels = c("No", "Yes")),
+
+    diabetes = factor(DIABETES,
+                      levels = c(0, 1),
+                      labels = c("No", "Yes")),
+
+    bp_meds = factor(BPMEDS,
+                     levels = c(0, 1),
+                     labels = c("No", "Yes")),
+
+    prev_chd = factor(PREVCHD,
+                      levels = c(0, 1),
+                      labels = c("No", "Yes")),
+
+    # 10-year incident stroke indicator for baseline cohort
+    # event if stroke occurred within 10 years
+    stroke_10yr = case_when(
+      !is.na(TIMESTRK) & TIMESTRK <= 3652.5 ~ "Yes",
+      !is.na(TIMESTRK) & TIMESTRK > 3652.5  ~ "No",
+      TRUE ~ NA_character_
+    ),
+    stroke_10yr = factor(stroke_10yr, levels = c("No", "Yes"))
+  ) %>%
+  select(
+    sex,
+    AGE,
+    SYSBP,
+    BMI,
+    TOTCHOL,
+    prev_chd,
+    diabetes,
+    curr_smoke,
+    bp_meds,
+    stroke_10yr
+  )
+
+# -------------------------
+# Label variables
+# -------------------------
+label(df_table1$AGE)        <- "Age (years)"
+label(df_table1$SYSBP)      <- "Systolic BP (mmHg)"
+label(df_table1$BMI)        <- "BMI (kg/m^2)"
+label(df_table1$TOTCHOL)    <- "Total Cholesterol (mg/dL)"
+label(df_table1$prev_chd)   <- "Coronary Heart Disease"
+label(df_table1$diabetes)   <- "Diabetes"
+label(df_table1$curr_smoke) <- "Current Smoker"
+label(df_table1$bp_meds)    <- "Antihypertensive Medication"
+label(df_table1$stroke_10yr)<- "Incident Stroke within 10 Years"
+
+# -------------------------
+# Create Table 1
+# -------------------------
+tab1 <- table1(
+  ~ AGE + SYSBP + BMI + TOTCHOL + prev_chd + diabetes + curr_smoke + bp_meds + stroke_10yr | sex,
+  data = df_table1,
+  overall = "Overall",
+  caption = "Baseline Characteristics of study participants by Sex"
+)
+
+tab1
+```
+
+```{r}
+# -----------------------------
+# Create BP group
+# -----------------------------
+df_surv <- df_surv %>%
+  mutate(
+    bp_group = ifelse(SYSBP >= 160, "High BP", "Normal BP"),
+    bp_group = factor(bp_group, levels = c("Normal BP", "High BP"))
+  )
+
+# -----------------------------
+# KM for Diabetes
+# -----------------------------
+fit_dm <- survfit(Surv(time, event) ~ DIABETES, data = df_surv)
+
+p1 <- ggsurvplot(
+  fit_dm,
+  data = df_surv,
+  conf.int = TRUE,
+  pval = TRUE,
+  risk.table = FALSE,
+  legend.labs = c("No Diabetes", "Diabetes"),
+  title = "A. Diabetes Status",
+  xlab = "Time (days)",
+  ylab = "Stroke-free survival probability",
+  ggtheme = theme_minimal()
+)
+
+# -----------------------------
+# KM for BP group
+# -----------------------------
+fit_bp <- survfit(Surv(time, event) ~ bp_group, data = df_surv)
+
+p2 <- ggsurvplot(
+  fit_bp,
+  data = df_surv,
+  conf.int = TRUE,
+  pval = TRUE,
+  risk.table = FALSE,
+  legend.labs = c("Normal BP", "High BP"),
+  title = "B. Blood Pressure Group",
+  xlab = "Time (days)",
+  ylab = "Stroke-free survival probability",
+  ggtheme = theme_minimal()
+)
+
+# -----------------------------
+# Combine side-by-side
+# -----------------------------
+#grid.arrange(p1$plot, p2$plot, ncol = 2)
+grid.arrange(
+  p1$plot, p2$plot,
+  ncol = 2,
+  bottom = "Kaplan–Meier curves for 10-year stroke-free survival by diabetes and blood pressure group."
+)
+```
+
+
+
+```{r}
+# =========================
+# Create survival dataset
+# =========================
+
+df_surv <- df_base %>%
+  mutate(
+    # time to event (stroke) or censoring at 10 years
+    time = pmin(TIMESTRK, 3652.5, na.rm = TRUE),
+
+    # event indicator: 1 = stroke within 10 years, 0 = censored
+    event = ifelse(!is.na(TIMESTRK) & TIMESTRK <= 3652.5, 1, 0)
+  )
+
+# Check
+#summary(df_surv$time)
+#table(df_surv$event)
+```
+
+```{r}
+# =========================
+# LASSO variable selection for Cox model
+# Force AGE, SYSBP, DIABETES into the model
+# Select among: PREVCHD, BPMEDS, CURSMOKE, TOTCHOL, BMI
+# =========================
+
+#-----------------------------------
+# Keep only variables needed here
+#-----------------------------------
+lasso_vars <- c("SEX", "AGE", "SYSBP", "DIABETES",
+                "PREVCHD", "BPMEDS", "CURSMOKE", "TOTCHOL", "BMI",
+                "time", "event")
+
+df_lasso <- df_surv %>%
+  select(all_of(lasso_vars))
+
+#-----------------------------------
+# Function to run sex-specific LASSO
+#-----------------------------------
+run_lasso_cox <- function(data, sex_value) {
+  
+  # subset by sex
+  dat_sex <- data %>%
+    filter(SEX == sex_value) %>%
+    
+    # complete case only for variables used in this LASSO step
+    select(AGE, SYSBP, DIABETES, PREVCHD, BPMEDS, CURSMOKE, TOTCHOL, BMI, time, event) %>%
+    na.omit()
+  
+  # design matrix
+  x <- model.matrix(
+    ~ AGE + SYSBP + DIABETES + PREVCHD + BPMEDS + CURSMOKE + TOTCHOL + BMI,
+    data = dat_sex
+  )[, -1]   # remove intercept
+  
+  # survival outcome
+  y <- Surv(dat_sex$time, dat_sex$event)
+  
+  # penalty factors:
+  # 0 = forced in model
+  # 1 = subject to LASSO selection
+  penalty_factors <- c(
+    AGE = 0,
+    SYSBP = 0,
+    DIABETES = 0,
+    PREVCHD = 1,
+    BPMEDS = 1,
+    CURSMOKE = 1,
+    TOTCHOL = 1,
+    BMI = 1
+  )
+  
+  # make sure order matches columns of x
+  penalty_factors <- penalty_factors[colnames(x)]
+  
+  # cross-validated LASSO Cox model
+  cvfit <- cv.glmnet(
+    x = x,
+    y = y,
+    family = "cox",
+    alpha = 1,
+    penalty.factor = penalty_factors,
+    nfolds = 10
+  )
+  
+  # coefficients at lambda.min
+  coef_min <- coef(cvfit, s = "lambda.min")
+  coef_1se <- coef(cvfit, s = "lambda.1se")
+  
+  selected_min <- rownames(coef_min)[as.vector(coef_min != 0)]
+  selected_1se <- rownames(coef_1se)[as.vector(coef_1se != 0)]
+  
+  list(
+    data_used = dat_sex,
+    cvfit = cvfit,
+    selected_lambda_min = selected_min,
+    selected_lambda_1se = selected_1se,
+    coef_lambda_min = coef_min,
+    coef_lambda_1se = coef_1se
+  )
+}
+
+#-----------------------------------
+# Run separately for males and females
+#-----------------------------------
+lasso_male   <- run_lasso_cox(df_lasso, sex_value = 1)
+lasso_female <- run_lasso_cox(df_lasso, sex_value = 2)
+
+#-----------------------------------
+# View selected variables
+#-----------------------------------
+lasso_male$selected_lambda_min
+lasso_female$selected_lambda_min
+
+lasso_male$selected_lambda_1se
+lasso_female$selected_lambda_1se
+```
+```{r}
+# =========================
+# Final Cox models
+# =========================
+
+# Final variables
+final_vars <- c("AGE", "SYSBP", "DIABETES", "PREVCHD", 
+                "BPMEDS", "CURSMOKE", "BMI", "TOTCHOL", 
+                "time", "event", "SEX")
+
+df_final <- df_surv %>%
+  select(all_of(final_vars)) %>%
+  na.omit()   # complete case ONLY for final model variables
+
+# -------------------------
+# Male model
+# -------------------------
+cox_male <- coxph(
+  Surv(time, event) ~ AGE + SYSBP + DIABETES + PREVCHD + 
+    BPMEDS + CURSMOKE + BMI + TOTCHOL,
+  data = df_final %>% filter(SEX == 1)
+)
+
+#summary(cox_male)
+
+# -------------------------
+# Female model
+# -------------------------
+cox_female <- coxph(
+  Surv(time, event) ~ AGE + SYSBP + DIABETES + PREVCHD + 
+    BPMEDS + CURSMOKE + BMI + TOTCHOL,
+  data = df_final %>% filter(SEX == 2)
+)
+
+#summary(cox_female)
+
+# Create a variable label mapping for a nice summary table
+var_labels <- c(
+  AGE = "Age (per year)",
+  SYSBP = "Systolic Blood Pressure (mmHg)",
+  DIABETES = "Diabetes (Yes vs No)",
+  PREVCHD = "Coronary Heart Disease",
+  BPMEDS = "Antihypertensive Medication",
+  CURSMOKE = "Current Smoker",
+  BMI = "Body Mass Index (kg/m²)",
+  TOTCHOL = "Total Cholesterol (mg/dL)"
+)
+
+# Function to tidy Cox output
+tidy_cox <- function(model, sex_label) {
+  broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+    mutate(
+      Sex = sex_label,
+      HR = estimate,
+      CI = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")")
+    ) %>%
+    select(Sex, term, HR, CI, p.value)
+}
+
+# Combine male + female
+cox_table <- bind_rows(
+  tidy_cox(cox_male, "Male"),
+  tidy_cox(cox_female, "Female")
+)
+
+cox_table_clean <- cox_table %>%
+  mutate(
+    Variable = var_labels[term],   # replace names
+    HR = round(HR, 2),
+    p.value = round(p.value, 3)
+  ) %>%
+  select(Sex, Variable, HR, CI, p.value)  # reorder & rename
+
+# Display
+cox_table_clean %>%
+  kable(caption = "Hazard ratios from sex-specific Cox proportional hazards models") %>%
+  kable_styling(full_width = FALSE)
+
+# Extract VIF values
+vif_male <- data.frame(
+  Variable = names(vif(cox_male)),
+  Male = as.numeric(vif(cox_male))
+)
+
+vif_female <- data.frame(
+  Variable = names(vif(cox_female)),
+  Female = as.numeric(vif(cox_female))
+)
+
+# Merge
+vif_table <- left_join(vif_male, vif_female, by = "Variable")
+
+# Apply nice labels
+var_labels <- c(
+  AGE = "Age",
+  SYSBP = "Systolic Blood Pressure",
+  DIABETES = "Diabetes",
+  PREVCHD = "Coronary Heart Disease",
+  BPMEDS = "Antihypertensive Medication",
+  CURSMOKE = "Current Smoker",
+  BMI = "Body Mass Index",
+  TOTCHOL = "Total Cholesterol"
+)
+
+vif_table <- vif_table %>%
+  mutate(
+    Variable = var_labels[Variable],
+    Male = round(Male, 2),
+    Female = round(Female, 2)
+  )
+
+# Print nice table
+vif_table %>%
+  kable(caption = "Variance Inflation Factors (VIF) for covariates in male and female Cox models") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+# --------------------------------------------------------
+# Forest plot of hazard ratios with confidence intervals
+# --------------------------------------------------------
+cox_plot <- cox_table_clean %>%
+  mutate(
+    lower = as.numeric(sub("\\((.*),.*", "\\1", CI)),
+    upper = as.numeric(sub(".*, (.*)\\)", "\\1", CI))
+  )
+
+ggplot(cox_plot, aes(x = Variable, y = HR, ymin = lower, ymax = upper, color = Sex)) +
+  geom_pointrange(position = position_dodge(width = 0.5)) +
+  geom_hline(yintercept = 1, linetype = "dashed") +
+  coord_flip() +
+  labs(title = "Hazard Ratios from Cox Models",
+       y = "Hazard Ratio",
+       x = "") +
+  theme_minimal()
+```
+
+
+```{r}
+# -----------------------------------------------------------------
+# Check proportional hazards assumption using Schoenfeld residuals
+# -----------------------------------------------------------------
+
+# Male
+ph_male <- cox.zph(cox_male)
+par(mfrow = c(3,3), oma = c(0, 0, 3, 0))
+plot(ph_male)
+mtext("Schoenfeld residual plots for the male Cox model",
+      side = 3, outer = TRUE, cex = 1.1)
+par(mfrow = c(1,1))
+
+# Female
+ph_female <- cox.zph(cox_female)
+par(mfrow = c(3,3), oma = c(0, 0, 3, 0))
+plot(ph_female)
+mtext("Schoenfeld residual plots for the female Cox model",
+      side = 3, outer = TRUE, cex = 1.1)
+par(mfrow = c(1,1))
+```
+
+```{r}
+# -----------------------------
+# Helper: get baseline values
+# -----------------------------
+get_baseline_profile <- function(data) {
+  data %>%
+    summarise(
+      SYSBP = mean(SYSBP, na.rm = TRUE),
+      BMI = mean(BMI, na.rm = TRUE),
+      TOTCHOL = mean(TOTCHOL, na.rm = TRUE),
+      DIABETES = 0,
+      PREVCHD = 0,
+      BPMEDS = 0,
+      CURSMOKE = 0
+    )
+}
+
+# -----------------------------
+# Function to compute survival
+# -----------------------------
+compute_surv_table <- function(cox_model, data, sex_value) {
+  
+  df_sex <- data %>% filter(SEX == sex_value)
+  
+  base <- get_baseline_profile(df_sex)
+  
+  ages <- c(40, 50, 60)
+  
+  profiles <- list(
+    baseline = base,
+    
+    high_bp = base %>% mutate(SYSBP = 160),
+    
+    diabetes = base %>% mutate(DIABETES = 1),
+    
+    high_bp_diabetes = base %>% mutate(SYSBP = 160, DIABETES = 1),
+    
+    smoker = base %>% mutate(CURSMOKE = 1)
+  )
+  
+  results <- lapply(ages, function(a) {
+    
+    lapply(names(profiles), function(p) {
+      
+      newdata <- profiles[[p]] %>%
+        mutate(AGE = a)
+      
+      sf <- survfit(cox_model, newdata = newdata)
+      
+      # Extract survival at 10 years
+      surv_10yr <- summary(sf, times = 3652.5)$surv
+      
+      data.frame(
+        Age = a,
+        Profile = p,
+        Survival_10yr = surv_10yr
+      )
+    }) %>% bind_rows()
+    
+  }) %>% bind_rows()
+  
+  # reshape to wide
+  results %>%
+    pivot_wider(names_from = Profile, values_from = Survival_10yr) %>%
+    arrange(Age)
+}
+
+# -----------------------------
+# Male table
+# -----------------------------
+male_table <- compute_surv_table(cox_male, df_final, sex_value = 1)
+
+# -----------------------------
+# Female table
+# -----------------------------
+female_table <- compute_surv_table(cox_female, df_final, sex_value = 2)
+```
+
+```{r}
+# Male table
+male_table %>%
+  kable(digits = 3, caption = "10-year stroke-free survival probabilities for males") %>%
+  kable_styling(full_width = FALSE)
+
+# Female table
+female_table %>%
+  kable(digits = 3, caption = "10-year stroke-free survival probabilities for females") %>%
+  kable_styling(full_width = FALSE)
+```
+
