@@ -114,6 +114,28 @@ tab1 <- table1(
 tab1
 ```
 
+
+
+
+```{r}
+# =========================
+# Create survival dataset
+# =========================
+
+df_surv <- df_base %>%
+  mutate(
+    # time to event (stroke) or censoring at 10 years
+    time = pmin(TIMESTRK, 3652.5, na.rm = TRUE),
+
+    # event indicator: 1 = stroke within 10 years, 0 = censored
+    event = ifelse(!is.na(TIMESTRK) & TIMESTRK <= 3652.5, 1, 0)
+  )
+
+# Check
+#summary(df_surv$time)
+#table(df_surv$event)
+```
+
 ```{r}
 # -----------------------------
 # Create BP group
@@ -171,26 +193,6 @@ grid.arrange(
 )
 ```
 
-
-
-```{r}
-# =========================
-# Create survival dataset
-# =========================
-
-df_surv <- df_base %>%
-  mutate(
-    # time to event (stroke) or censoring at 10 years
-    time = pmin(TIMESTRK, 3652.5, na.rm = TRUE),
-
-    # event indicator: 1 = stroke within 10 years, 0 = censored
-    event = ifelse(!is.na(TIMESTRK) & TIMESTRK <= 3652.5, 1, 0)
-  )
-
-# Check
-#summary(df_surv$time)
-#table(df_surv$event)
-```
 
 ```{r}
 # =========================
