@@ -542,3 +542,79 @@ female_table %>%
   kable_styling(full_width = FALSE)
 ```
 
+```{r}
+# =========================================================
+# Summarize SBP and Diabetes across examination periods
+# =========================================================
+
+# Use the full dataset (all 3 periods), excluding prior stroke at baseline
+# but keep all periods for those participants
+df_periods <- df %>%
+  filter(RANDID %in% df_base$RANDID)  # only participants in our analytic cohort
+
+# Recode period and sex for readability
+df_periods <- df_periods %>%
+  mutate(
+    Period = factor(PERIOD, levels = c(1, 2, 3),
+                    labels = c("Period 1", "Period 2", "Period 3")),
+    Sex = factor(SEX, levels = c(1, 2), labels = c("Male", "Female"))
+  )
+
+# ---------------------------------------------------------
+# Table: Mean SBP and Diabetes prevalence by Period and Sex
+# ---------------------------------------------------------
+period_summary <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(
+    N = n(),
+    SBP_mean = round(mean(SYSBP, na.rm = TRUE), 1),
+    SBP_sd   = round(sd(SYSBP, na.rm = TRUE), 1),
+    Diabetes_n    = sum(DIABETES == 1, na.rm = TRUE),
+    Diabetes_pct  = round(100 * mean(DIABETES == 1, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    `SBP Mean (SD)`       = paste0(SBP_mean, " (", SBP_sd, ")"),
+    `Diabetes n (%)`      = paste0(Diabetes_n, " (", Diabetes_pct, "%)")
+  ) %>%
+  select(Period, Sex, N, `SBP Mean (SD)`, `Diabetes n (%)`)
+
+period_summary %>%
+  kable(caption = "Systolic Blood Pressure and Diabetes Prevalence by Examination Period and Sex") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r}
+# ---------------------------------------------------------
+# Figure: Mean SBP across periods by sex
+# ---------------------------------------------------------
+sbp_plot <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(mean_sbp = mean(SYSBP, na.rm = TRUE),
+            se = sd(SYSBP, na.rm = TRUE) / sqrt(n()),
+            .groups = "drop")
+
+ggplot(sbp_plot, aes(x = Period, y = mean_sbp, color = Sex, group = Sex)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_sbp - se, ymax = mean_sbp + se), width = 0.1) +
+  labs(title = "Mean Systolic Blood Pressure Across Examination Periods by Sex",
+       y = "Mean SBP (mmHg)", x = "Examination period") +
+  theme_minimal()
+
+# ---------------------------------------------------------
+# Figure: Diabetes prevalence across periods by sex
+# ---------------------------------------------------------
+dm_plot <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(pct_dm = 100 * mean(DIABETES == 1, na.rm = TRUE),
+            .groups = "drop")
+
+ggplot(dm_plot, aes(x = Period, y = pct_dm, color = Sex, group = Sex)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  labs(title = "Diabetes Prevalence Across Examination Periods by Sex",
+       y = "Diabetes Prevalence (%)", x = "Examination Period") +
+  theme_minimal()
+```
+
