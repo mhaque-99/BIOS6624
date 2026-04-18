@@ -1,0 +1,694 @@
+---
+output:
+  pdf_document:
+    latex_engine: xelatex
+    toc: false
+    number_sections: false
+geometry: margin=1in
+fontsize: 12pt
+linestretch: 2
+header-includes:
+  - \usepackage{float}
+  - \floatplacement{table}{H}
+  - \floatplacement{figure}{H}
+  - \usepackage{booktabs}
+  - \usepackage{caption}
+  - \captionsetup[table]{justification=raggedright,singlelinecheck=false}
+  - \usepackage{titlesec}
+  - \titlespacing*{\section}{0pt}{6pt}{4pt}
+  - \titlespacing*{\subsection}{0pt}{4pt}{2pt}
+  - \titlespacing*{\subsubsection}{0pt}{4pt}{2pt}
+  - \renewcommand{\arraystretch}{0.85}
+---
+
+<!-- Title -->
+**Sex-Specific Risk Factors and 10-Year Stroke Probability in the Framingham Heart Study: A Survival Analysis**
+
+<!-- Name -->
+Mahfuza Haque Mahi[^1]
+
+[^1]: Biostatistics PhD Student, Colorado School of Public Health, University of Colorado Anschutz Medical Campus, Aurora, CO
+
+**Introduction**
+
+Stroke is a leading cause of death and long-term disability worldwide, and identifying modifiable risk factors at the population level remains a critical public health priority. The Framingham Heart Study, initiated in 1948, was the first prospective cohort study to pioneer the concept of cardiovascular risk factors and their joint effects on disease outcomes. Originally enrolling 5,209 community-dwelling adults from Framingham, Massachusetts, the study has followed participants biennially with comprehensive clinical examinations, providing an unparalleled resource for investigating long-term disease etiology.
+
+This analysis draws on a subset of 4,434 participants from the Framingham Study with baseline measurements collected during the first examination period. The primary objective is to identify baseline risk factors associated with time to first stroke within a 10-year follow-up window, analyzed separately by sex. A 10-year window was chosen to ensure that baseline risk factor measurements remain temporally relevant to the outcome. Secondary objectives include estimating 10-year stroke-free survival probabilities under clinically meaningful risk profiles, and summarizing how systolic blood pressure and diabetes prevalence change across the three examination periods to assess temporal changes and motivate future analyses incorporating time-varying covariates. Cox proportional hazards models, with variable selection guided by LASSO, were used to evaluate the association between baseline characteristics including age, systolic blood pressure, diabetes, coronary heart disease, smoking status, BMI, antihypertensive medication use, and total cholesterol and stroke incidence. All models were fit separately for males and females, and 10-year stroke-free survival probabilities were estimated for selected risk profiles. Findings from this analysis may help clinicians better understand sex-specific patterns of stroke risk and inform targeted prevention strategies.
+
+**Methods**
+
+**Data Management:**
+Data from 4,434 participants were analyzed. The analytic cohort was restricted to Period 1 (baseline) observations among participants free of prior stroke, yielding an initial sample of 4,402 individuals. A complete case analysis across all model covariates, resulted in a final analytic sample of 4,275 participants. All analyses were stratified by sex. The primary outcome was time to first incident stroke within 10 years of baseline. Follow-up time was measured in days from baseline and capped at 3,652.5 days (365.25 x 10) to account for leap years. Participants who experienced a stroke within this window were classified as events. Those who remained stroke-free beyond 10 years or who experienced non-stroke events were censored at 10 years or at their last known follow-up, respectively. Competing risks were not explicitly modeled; non-stroke deaths and other events were treated as censored observations. Baseline covariates included were age, systolic blood pressure, body mass index (BMI), total cholesterol, diabetes status, current smoking status, antihypertensive medication use, and prevalent coronary heart disease. Age, systolic blood pressure, and diabetes were designated as mandatory covariates and retained in all models.
+
+**Data Analysis:**
+Baseline characteristics were summarized in a table stratified by sex using standard descriptive statistics. Kaplan–Meier curves were used to examine unadjusted stroke-free survival by diabetes status and by blood pressure group (systolic BP $\geq 160$ mmHg vs. < 160 mmHg), with group differences evaluated using log-rank tests. To assess temporal changes in key risk factors, mean systolic blood pressure and diabetes prevalence were additionally summarized across all three examination periods by sex, using participants from the analytic cohort who had data available at each period. This descriptive analysis was conducted to assess stability of risk factors and motivate time-varying analyses.
+
+Variable selection was conducted separately for males and females using LASSO-penalized Cox proportional hazards regression with 10-fold cross-validation via the glmnet package. Age, systolic blood pressure, and diabetes were assigned a penalty factor of zero to force their inclusion, while BMI, total cholesterol, coronary heart disease, antihypertensive medication use, and current smoking were subject to penalization. The lambda corresponding to the minimum cross-validated partial likelihood deviance (lambda.min) was used to identify selected variables. Based on LASSO results from both sexes, a common set of covariates was used to fit final Cox models separately for males and females to ensure comparability. Final models were fit using complete case analysis restricted to the selected covariates, and multicollinearity was assessed using variance inflation factors (VIF). The proportional hazards assumption was evaluated using Schoenfeld residuals and graphical diagnostics via the cox.zph function. Ten-year stroke-free survival probabilities were estimated for individuals aged 40, 50, and 60 years under five risk profiles: (1) a baseline profile using sex-specific mean covariate values with no diabetes and no antihypertensive medication use; (2) high systolic blood pressure (160 mmHg); (3) diabetes; (4) both high systolic blood pressure and diabetes; and (5) current smoker. All analyses were conducted in R version 4.3.1.
+
+**Results**
+
+**Descriptive Statistics:**
+The analytic cohort included 1,930 males and 2,472 females with complete baseline data (n = 4275). The groups were similar in age (mean 49.7 for males vs. 50.0 years for females). Females had slightly higher mean systolic blood pressure compared to males (134 vs. 132 mmHg), while males had higher rates of coronary heart disease (6.2% vs. 2.7%) and current smoking (60.5% vs. 40.5%). Diabetes prevalence was low and similar across sexes (3.1% vs. 2.4%) (Table 1). Kaplan-Meier curves confirmed that participants with diabetes and those with high systolic blood pressure ($≥160$ mmHg) had notably lower stroke-free survival over 10 years compared to their respective counterparts, with both differences being statistically significant by the log-rank test (Figure 1).
+
+**Temporal Trends in Systolic Blood Pressure and Diabetes:**
+Both mean systolic blood pressure and diabetes prevalence increased across the three examination periods in males and females (Table 2). Mean SBP rose from 131.6 to 139.3 mmHg in males, and from 133.7 to 140.9 mmHg in females, with consistently higher values in females (Supplementary Figure 3). Diabetes prevalence increased more steeply among males, rising from 3.1% to 8.7%, compared to an increase from 2.4% to 7.1% among females (Supplementary Figure 4).
+
+**Cox Proportional Hazards Models:**
+LASSO selection at lambda.min retained age, systolic blood pressure, diabetes, coronary heart disease, antihypertensive medication use, current smoking, and BMI for males, with total cholesterol additionally selected for females. To maintain comparability across sex-specific models, all eight covariates were included in both final models. VIFs were all below 1.5 for both models (Supplimentary Table 6), indicating no meaningful multicollinearity. Results from the sex-specific Cox models are presented in Table 3. Age, systolic blood pressure, diabetes, coronary heart disease, and current smoking were statistically significant in both models. Coronary heart disease showed a notably stronger association in males (HR: 3.25, 95% CI: 2.35-4.50) than females (HR: 1.72, 95% CI: 1.04-2.85), as did diabetes (HR: 2.79 vs. 2.30). BMI was statistically significant only in males, while total cholesterol and antihypertensive medication use were not significant in either model. Schoenfeld residual plots showed no substantial evidence of proportional hazards violations for most covariates in either model (Supplimentary Figures 1-2). However, current smoking showed mild time-varying behavior in both models and systolic blood pressure showed a slight downward trend in females; results are interpreted with appropriate caution.
+
+**Ten-Year Stroke-Free Survival Probabilities:**
+Ten-year stroke-free survival probabilities declined with age and worsened under higher-risk profiles in both sexes (Tables 4 and 5). Females had slightly higher baseline survival probabilities than males across all ages. The combined high blood pressure and diabetes profile produced the lowest survival estimates, with males aged 60 having a 10-year stroke-free survival probability of 53.1% and females of 68.5%. Current smoking also reduced survival probabilities across all ages and in both sexes.
+
+**Discussion**
+
+This analysis identified age, systolic blood pressure, diabetes, coronary heart disease, and current smoking as consistent predictors of 10-year stroke risk in both sexes. Coronary heart disease and diabetes carried notably larger hazard ratios in males than females, suggesting meaningful sex differences in how these risk factors drive stroke incidence. The estimated 10-year stroke-free survival probabilities further illustrated that the combination of high systolic blood pressure and diabetes produced the greatest reductions in survival, particularly at older ages, highlighting the clinical importance of managing both conditions jointly. The observed increases in mean systolic blood pressure and diabetes prevalence across the three examination periods in both sexes suggest that these risk factors are not stable over time. This has important implications for the interpretation of the current analysis. By relying solely on baseline measurements, the Cox models implicitly assume that risk factor values remain constant over time. If systolic blood pressure or diabetes status changes meaningfully over time as the descriptive summaries clearly indicate, then baseline-only models may misestimate the true association between these exposures and stroke risk. A time-varying covariate analysis, which updates exposures at each examination period, would more accurately capyure each participant's evolving risk profile and could yield more accurate or precise estimates. Several limitations of this analysis should be considered. Complete case analysis assumes data are missing completely at random, which may not hold. Non-stroke deaths were treated as censored rather than modeled as competing risks which may overestimate stroke-free survival probabilities, particularly at older ages. Also, cohort's demographic homogeneity limits generalizability to more diverse populations. Finally, the use of baseline-only risk factors does not account for temporal changes in exposures, and future analyses incorporating time-varying covariates are warranted to address this limitation. Despite these limitations, this analysis provides a coherent sex-stratified portrait of stroke risk in the Framingham cohort and a clear foundation for future time-varying analyses.
+
+
+\newpage
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(pwr)
+library(knitr)
+library(kableExtra)
+library(powertools)
+library(ggplot2)
+library(reshape2)
+library(tidyverse)
+library(skimr)
+library(tableone)
+library(gridExtra)
+library(here)
+library(table1)
+library(ggplot2)
+library(gridExtra)
+library(corrplot)
+library(survival)
+library(survminer)
+library(glmnet)
+library(car)
+df <- read.csv(here::here("Project3/DataRaw", "frmgham2.csv"))
+```
+
+
+```{r,echo = F}
+# -------------------------
+# Create baseline dataset
+# -------------------------
+# Period 1 only, and exclude prior stroke at baseline
+df_base <- df %>%
+  filter(PERIOD == 1, PREVSTRK == 0)
+
+# -------------------------
+# Create variables for Table 1
+# -------------------------
+# Keep missing values in the dataset
+# Recode variables for readability
+# Also create a 10-year incident stroke indicator for descriptive Table 1
+
+df_table1 <- df_base %>%
+  mutate(
+    sex = factor(SEX, levels = c(1, 2), labels = c("Male", "Female")),
+
+    curr_smoke = factor(CURSMOKE,
+                        levels = c(0, 1),
+                        labels = c("No", "Yes")),
+
+    diabetes = factor(DIABETES,
+                      levels = c(0, 1),
+                      labels = c("No", "Yes")),
+
+    bp_meds = factor(BPMEDS,
+                     levels = c(0, 1),
+                     labels = c("No", "Yes")),
+
+    prev_chd = factor(PREVCHD,
+                      levels = c(0, 1),
+                      labels = c("No", "Yes")),
+
+    # 10-year incident stroke indicator for baseline cohort
+    # event if stroke occurred within 10 years
+    stroke_10yr = case_when(
+      !is.na(TIMESTRK) & TIMESTRK <= 3652.5 ~ "Yes",
+      !is.na(TIMESTRK) & TIMESTRK > 3652.5  ~ "No",
+      TRUE ~ NA_character_
+    ),
+    stroke_10yr = factor(stroke_10yr, levels = c("No", "Yes"))
+  ) %>%
+  select(
+    sex,
+    AGE,
+    SYSBP,
+    BMI,
+    TOTCHOL,
+    prev_chd,
+    diabetes,
+    curr_smoke,
+    bp_meds,
+    stroke_10yr
+  )
+
+# -------------------------
+# Label variables
+# -------------------------
+label(df_table1$AGE)        <- "Age (years)"
+label(df_table1$SYSBP)      <- "Systolic BP (mmHg)"
+label(df_table1$BMI)        <- "BMI (kg/m^2)"
+label(df_table1$TOTCHOL)    <- "Total Cholesterol (mg/dL)"
+label(df_table1$prev_chd)   <- "Coronary Heart Disease"
+label(df_table1$diabetes)   <- "Diabetes"
+label(df_table1$curr_smoke) <- "Current Smoker"
+label(df_table1$bp_meds)    <- "Antihypertensive Medication"
+label(df_table1$stroke_10yr)<- "Incident Stroke within 10 Years"
+
+# -------------------------
+# Create Table 1
+# -------------------------
+tab1 <- table1(
+  ~ AGE + SYSBP + BMI + TOTCHOL + prev_chd + diabetes + curr_smoke + bp_meds + stroke_10yr | sex,
+  data = df_table1,
+  overall = "Overall",
+  caption = "Baseline Characteristics of study participants by Sex"
+)
+
+tab1 %>%
+  t1kable() %>%                              # convert table1 to kable
+  kable_styling(
+    latex_options = c("repeat_header", "striped"),
+    font_size = 9,
+    full_width = FALSE
+  )
+```
+
+```{r, echo = F}
+# =========================
+# Create survival dataset
+# =========================
+
+df_surv <- df_base %>%
+  mutate(
+    # time to event (stroke) or censoring at 10 years
+    time = pmin(TIMESTRK, 3652.5, na.rm = TRUE),
+
+    # event indicator: 1 = stroke within 10 years, 0 = censored
+    event = ifelse(!is.na(TIMESTRK) & TIMESTRK <= 3652.5, 1, 0)
+  )
+
+
+# -----------------------------
+# Create BP group
+# -----------------------------
+df_surv <- df_surv %>%
+  mutate(
+    bp_group = ifelse(SYSBP >= 160, "High BP", "Normal BP"),
+    bp_group = factor(bp_group, levels = c("Normal BP", "High BP"))
+  )
+
+# -----------------------------
+# KM for Diabetes
+# -----------------------------
+fit_dm <- survfit(Surv(time, event) ~ DIABETES, data = df_surv)
+
+p1 <- ggsurvplot(
+  fit_dm,
+  data = df_surv,
+  conf.int = TRUE,
+  pval = TRUE,
+  risk.table = FALSE,
+  legend.labs = c("No Diabetes", "Diabetes"),
+  title = "A. Diabetes Status",
+  xlab = "Time (days)",
+  ylab = "Stroke-free survival probability",
+  ggtheme = theme_minimal()
+)
+
+# -----------------------------
+# KM for BP group
+# -----------------------------
+fit_bp <- survfit(Surv(time, event) ~ bp_group, data = df_surv)
+
+p2 <- ggsurvplot(
+  fit_bp,
+  data = df_surv,
+  conf.int = TRUE,
+  pval = TRUE,
+  risk.table = FALSE,
+  legend.labs = c("Normal BP", "High BP"),
+  title = "B. Blood Pressure Group",
+  xlab = "Time (days)",
+  ylab = "Stroke-free survival probability",
+  ggtheme = theme_minimal()
+)
+
+# -----------------------------
+# Combine side-by-side
+# -----------------------------
+#grid.arrange(p1$plot, p2$plot, ncol = 2)
+grid.arrange(
+  p1$plot, p2$plot,
+  ncol = 2,
+  bottom = "Figure1: Kaplan–Meier curves for 10-year stroke-free survival 
+  by diabetes and blood pressure group."
+)
+```
+
+
+```{r, echo = F}
+# =========================================================
+# Summarize SBP and Diabetes across examination periods
+# =========================================================
+
+# Use the full dataset (all 3 periods), excluding prior stroke at baseline
+# but keep all periods for those participants
+df_periods <- df %>%
+  filter(RANDID %in% df_base$RANDID)  # only participants in our analytic cohort
+
+# Recode period and sex for readability
+df_periods <- df_periods %>%
+  mutate(
+    Period = factor(PERIOD, levels = c(1, 2, 3),
+                    labels = c("Period 1", "Period 2", "Period 3")),
+    Sex = factor(SEX, levels = c(1, 2), labels = c("Male", "Female"))
+  )
+
+# ---------------------------------------------------------
+# Table: Mean SBP and Diabetes prevalence by Period and Sex
+# ---------------------------------------------------------
+period_summary <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(
+    N = n(),
+    SBP_mean = round(mean(SYSBP, na.rm = TRUE), 1),
+    SBP_sd   = round(sd(SYSBP, na.rm = TRUE), 1),
+    Diabetes_n    = sum(DIABETES == 1, na.rm = TRUE),
+    Diabetes_pct  = round(100 * mean(DIABETES == 1, na.rm = TRUE), 1),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    `SBP Mean (SD)`       = paste0(SBP_mean, " (", SBP_sd, ")"),
+    `Diabetes n (%)`      = paste0(Diabetes_n, " (", Diabetes_pct, "%)")
+  ) %>%
+  select(Period, Sex, N, `SBP Mean (SD)`, `Diabetes n (%)`)
+
+period_summary %>%
+  kable(caption = "Systolic Blood Pressure and Diabetes Prevalence by Examination Period and Sex") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r, echo = F, include = F}
+# =========================
+# LASSO variable selection for Cox model
+# Force AGE, SYSBP, DIABETES into the model
+# Select among: PREVCHD, BPMEDS, CURSMOKE, TOTCHOL, BMI
+# =========================
+
+#-----------------------------------
+# Keep only variables needed here
+#-----------------------------------
+lasso_vars <- c("SEX", "AGE", "SYSBP", "DIABETES",
+                "PREVCHD", "BPMEDS", "CURSMOKE", "TOTCHOL", "BMI",
+                "time", "event")
+
+df_lasso <- df_surv %>%
+  select(all_of(lasso_vars))
+
+#-----------------------------------
+# Function to run sex-specific LASSO
+#-----------------------------------
+run_lasso_cox <- function(data, sex_value) {
+  
+  # subset by sex
+  dat_sex <- data %>%
+    filter(SEX == sex_value) %>%
+    
+    # complete case only for variables used in this LASSO step
+    select(AGE, SYSBP, DIABETES, PREVCHD, BPMEDS, CURSMOKE, TOTCHOL, BMI, time, event) %>%
+    na.omit()
+  
+  # design matrix
+  x <- model.matrix(
+    ~ AGE + SYSBP + DIABETES + PREVCHD + BPMEDS + CURSMOKE + TOTCHOL + BMI,
+    data = dat_sex
+  )[, -1]   # remove intercept
+  
+  # survival outcome
+  y <- Surv(dat_sex$time, dat_sex$event)
+  
+  # penalty factors:
+  # 0 = forced in model
+  # 1 = subject to LASSO selection
+  penalty_factors <- c(
+    AGE = 0,
+    SYSBP = 0,
+    DIABETES = 0,
+    PREVCHD = 1,
+    BPMEDS = 1,
+    CURSMOKE = 1,
+    TOTCHOL = 1,
+    BMI = 1
+  )
+  
+  # make sure order matches columns of x
+  penalty_factors <- penalty_factors[colnames(x)]
+  
+  # cross-validated LASSO Cox model
+  cvfit <- cv.glmnet(
+    x = x,
+    y = y,
+    family = "cox",
+    alpha = 1,
+    penalty.factor = penalty_factors,
+    nfolds = 10
+  )
+  
+  # coefficients at lambda.min
+  coef_min <- coef(cvfit, s = "lambda.min")
+  coef_1se <- coef(cvfit, s = "lambda.1se")
+  
+  selected_min <- rownames(coef_min)[as.vector(coef_min != 0)]
+  selected_1se <- rownames(coef_1se)[as.vector(coef_1se != 0)]
+  
+  list(
+    data_used = dat_sex,
+    cvfit = cvfit,
+    selected_lambda_min = selected_min,
+    selected_lambda_1se = selected_1se,
+    coef_lambda_min = coef_min,
+    coef_lambda_1se = coef_1se
+  )
+}
+
+#-----------------------------------
+# Run separately for males and females
+#-----------------------------------
+lasso_male   <- run_lasso_cox(df_lasso, sex_value = 1)
+lasso_female <- run_lasso_cox(df_lasso, sex_value = 2)
+
+#-----------------------------------
+# View selected variables
+#-----------------------------------
+lasso_male$selected_lambda_min
+lasso_female$selected_lambda_min
+
+lasso_male$selected_lambda_1se
+lasso_female$selected_lambda_1se
+```
+
+\newpage
+
+```{r, echo = F}
+# =========================
+# Final Cox models
+# =========================
+
+# Final variables
+final_vars <- c("AGE", "SYSBP", "DIABETES", "PREVCHD", 
+                "BPMEDS", "CURSMOKE", "BMI", "TOTCHOL", 
+                "time", "event", "SEX")
+
+df_final <- df_surv %>%
+  select(all_of(final_vars)) %>%
+  na.omit()   # complete case ONLY for final model variables
+
+# -------------------------
+# Male model
+# -------------------------
+cox_male <- coxph(
+  Surv(time, event) ~ AGE + SYSBP + DIABETES + PREVCHD + 
+    BPMEDS + CURSMOKE + BMI + TOTCHOL,
+  data = df_final %>% filter(SEX == 1)
+)
+
+#summary(cox_male)
+
+# -------------------------
+# Female model
+# -------------------------
+cox_female <- coxph(
+  Surv(time, event) ~ AGE + SYSBP + DIABETES + PREVCHD + 
+    BPMEDS + CURSMOKE + BMI + TOTCHOL,
+  data = df_final %>% filter(SEX == 2)
+)
+
+#summary(cox_female)
+
+# Create a variable label mapping for a nice summary table
+var_labels <- c(
+  AGE = "Age (per year)",
+  SYSBP = "Systolic Blood Pressure (mmHg)",
+  DIABETES = "Diabetes (Yes vs No)",
+  PREVCHD = "Coronary Heart Disease",
+  BPMEDS = "Antihypertensive Medication",
+  CURSMOKE = "Current Smoker",
+  BMI = "Body Mass Index (kg/m²)",
+  TOTCHOL = "Total Cholesterol (mg/dL)"
+)
+
+# Function to tidy Cox output
+tidy_cox <- function(model, sex_label) {
+  broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+    mutate(
+      Sex = sex_label,
+      HR = estimate,
+      CI = paste0("(", round(conf.low, 2), ", ", round(conf.high, 2), ")")
+    ) %>%
+    select(Sex, term, HR, CI, p.value)
+}
+
+# Combine male + female
+cox_table <- bind_rows(
+  tidy_cox(cox_male, "Male"),
+  tidy_cox(cox_female, "Female")
+)
+
+cox_table_clean <- cox_table %>%
+  mutate(
+    Variable = var_labels[term],   # replace names
+    HR = round(HR, 2),
+    p.value = round(p.value, 3)
+  ) %>%
+  select(Sex, Variable, HR, CI, p.value)  # reorder & rename
+
+# Display
+cox_table_clean %>%
+  kable(caption = "Hazard ratios from sex-specific Cox proportional hazards models") %>%
+  kable_styling(full_width = FALSE)
+```
+
+```{r, echo = F}
+# -----------------------------
+# Helper: get baseline values
+# -----------------------------
+get_baseline_profile <- function(data) {
+  data %>%
+    summarise(
+      SYSBP = mean(SYSBP, na.rm = TRUE),
+      BMI = mean(BMI, na.rm = TRUE),
+      TOTCHOL = mean(TOTCHOL, na.rm = TRUE),
+      DIABETES = 0,
+      PREVCHD = 0,
+      BPMEDS = 0,
+      CURSMOKE = 0
+    )
+}
+
+# -----------------------------
+# Function to compute survival
+# -----------------------------
+compute_surv_table <- function(cox_model, data, sex_value) {
+  
+  df_sex <- data %>% filter(SEX == sex_value)
+  
+  base <- get_baseline_profile(df_sex)
+  
+  ages <- c(40, 50, 60)
+  
+  profiles <- list(
+    baseline = base,
+    
+    high_bp = base %>% mutate(SYSBP = 160),
+    
+    diabetes = base %>% mutate(DIABETES = 1),
+    
+    high_bp_diabetes = base %>% mutate(SYSBP = 160, DIABETES = 1),
+    
+    smoker = base %>% mutate(CURSMOKE = 1)
+  )
+  
+  results <- lapply(ages, function(a) {
+    
+    lapply(names(profiles), function(p) {
+      
+      newdata <- profiles[[p]] %>%
+        mutate(AGE = a)
+      
+      sf <- survfit(cox_model, newdata = newdata)
+      
+      # Extract survival at 10 years
+      surv_10yr <- summary(sf, times = 3652.5)$surv
+      
+      data.frame(
+        Age = a,
+        Profile = p,
+        Survival_10yr = surv_10yr
+      )
+    }) %>% bind_rows()
+    
+  }) %>% bind_rows()
+  
+  # reshape to wide
+  results %>%
+    pivot_wider(names_from = Profile, values_from = Survival_10yr) %>%
+    arrange(Age)
+}
+
+# -----------------------------
+# Male table
+# -----------------------------
+male_table <- compute_surv_table(cox_male, df_final, sex_value = 1)
+
+# -----------------------------
+# Female table
+# -----------------------------
+female_table <- compute_surv_table(cox_female, df_final, sex_value = 2)
+```
+
+```{r, echo = F}
+# Rename columns for readability
+male_table <- male_table %>%
+  rename(
+    `Baseline` = baseline,
+    `High SBP (160 mmHg)` = high_bp,
+    `Diabetes` = diabetes,
+    `High SBP + Diabetes` = high_bp_diabetes,
+    `Current Smoker` = smoker
+  )
+
+female_table <- female_table %>%
+  rename(
+    `Baseline` = baseline,
+    `High SBP (160 mmHg)` = high_bp,
+    `Diabetes` = diabetes,
+    `High SBP + Diabetes` = high_bp_diabetes,
+    `Current Smoker` = smoker
+  )
+
+# Male table
+male_table %>%
+  kable(digits = 3, caption = "10-year stroke-free survival probabilities for males") %>%
+  kable_styling(full_width = FALSE)
+
+# Female table
+female_table %>%
+  kable(digits = 3, caption = "10-year stroke-free survival probabilities for females") %>%
+  kable_styling(full_width = FALSE)
+```
+
+
+\newpage
+
+### Reproducible Research Information
+GitHub Repository: https://github.com/mhaque-99/BIOS6624/tree/main
+
+File name for Code: Project3/Code/Project3_report.rmd
+
+File name for Final report:Project3/Reports/Project3_report.pdf
+
+Directory for the dataset: C:/Users/mahim/OneDrive - The University of Colorado Denver/BIOS6624/Project3/DataRaw
+
+\newpage
+
+### Supplimentary Tables and Figures
+
+```{r, echo = F, message = F, warning = F}
+# Extract VIF values
+vif_male <- data.frame(
+  Variable = names(vif(cox_male)),
+  Male = as.numeric(vif(cox_male))
+)
+
+vif_female <- data.frame(
+  Variable = names(vif(cox_female)),
+  Female = as.numeric(vif(cox_female))
+)
+
+# Merge
+vif_table <- left_join(vif_male, vif_female, by = "Variable")
+
+# Apply nice labels
+var_labels <- c(
+  AGE = "Age",
+  SYSBP = "Systolic Blood Pressure",
+  DIABETES = "Diabetes",
+  PREVCHD = "Coronary Heart Disease",
+  BPMEDS = "Antihypertensive Medication",
+  CURSMOKE = "Current Smoker",
+  BMI = "Body Mass Index",
+  TOTCHOL = "Total Cholesterol"
+)
+
+vif_table <- vif_table %>%
+  mutate(
+    Variable = var_labels[Variable],
+    Male = round(Male, 2),
+    Female = round(Female, 2)
+  )
+
+# Print nice table
+vif_table %>%
+  kable(caption = "Variance Inflation Factors (VIF) for covariates in male and female Cox models") %>%
+  kable_styling(full_width = FALSE)
+```
+
+
+```{r schoenfeld-male, echo = F, fig.width=10, fig.height=6, fig.cap ="Schoenfeld residual plots for the male Cox model", fig.pos="H"}
+# -----------------------------------------------------------------
+# Check proportional hazards assumption using Schoenfeld residuals
+# -----------------------------------------------------------------
+
+ph_male <- cox.zph(cox_male)
+par(mfrow = c(2,4), oma = c(0, 0, 1, 0))
+plot(ph_male)
+par(mfrow = c(1,1))
+```
+
+
+```{r schoenfeld-female, echo = F, fig.width=10, fig.height=6, fig.cap="Schoenfeld residual plots for the female Cox model", fig.pos="H"}
+
+ph_female <- cox.zph(cox_female)
+par(mfrow = c(2,4), oma = c(0, 0, 1, 0))
+plot(ph_female)
+par(mfrow = c(1,1))
+```
+
+
+```{r sbp-period-plot, echo=FALSE, message=FALSE, warning=FALSE, fig.width=7, fig.height=4, fig.cap="Mean systolic blood pressure across examination periods by sex", fig.pos="H"}
+
+sbp_plot <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(mean_sbp = mean(SYSBP, na.rm = TRUE),
+            se = sd(SYSBP, na.rm = TRUE) / sqrt(n()),
+            .groups = "drop")
+
+ggplot(sbp_plot, aes(x = Period, y = mean_sbp, color = Sex, group = Sex)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = mean_sbp - se, ymax = mean_sbp + se), width = 0.1) +
+  labs(y = "Mean SBP (mmHg)", x = "Examination Period") +
+  theme_minimal()
+```
+
+
+```{r dm-period-plot, echo=FALSE, message=FALSE, warning=FALSE, fig.width=7, fig.height=4, fig.cap="Diabetes prevalence (%) across examination periods by sex", fig.pos="H"}
+
+dm_plot <- df_periods %>%
+  group_by(Period, Sex) %>%
+  summarise(pct_dm = 100 * mean(DIABETES == 1, na.rm = TRUE),
+            .groups = "drop")
+
+ggplot(dm_plot, aes(x = Period, y = pct_dm, color = Sex, group = Sex)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 3) +
+  labs(y = "Diabetes Prevalence (%)", x = "Examination Period") +
+  theme_minimal()
+```
