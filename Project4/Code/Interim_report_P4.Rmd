@@ -25,12 +25,11 @@ Mahfuza Haque Mahi
 
 **Introduction:**
 
-This project investigates the performance of five variable selection methods in multiple 
-linear regression using a simulation study in which the true underlying model is known. 
-The methods evaluated are: backward elimination based on F test and p-values, backward selection 
+This project evaluates the performance of five variable selection methods in multiple 
+linear regression using a simulation study with a known true model. The methods include backward elimination based on F test and p-values, backward selection 
 using the Akaike Information Criterion (AIC), backward selection using the Bayesian 
 Information Criterion (BIC), the LASSO, and the Elastic Net. Simulated datasets will include 20 
-continuous predictors, with five have predictors having true non-zero effects and the remaining fifteen having true coefficients of zero. Scenarios will vary both sample size and the degree of correlation among predictors. Performance will be evaluated along several dimensions: the ability of each method to correctly identify the five true predictors, its tendency to include extraneous variables, 
+continuous predictors, with five having true non-zero effects and fifteen having coefficients equal to zero. Scenarios will vary both sample size and the degree of correlation among predictors. Performance will be evaluated along several dimensions: the ability of each method to correctly identify the five true predictors, its tendency to include extraneous variables, 
 and the quality of the estimates it produces for retained variables in terms of bias, 
 confidence interval coverage, Type I error, and Type II error. We expect that methods with stricter 
 penalization will achieve lower false positive rates at the cost of higher Type II error, 
@@ -43,11 +42,11 @@ sizes will consistently improve selection accuracy and estimation precision.
 Data will be generated in R v4.3.1 using \texttt{gendata} 
 from the \texttt{hdrm} package. Each dataset will include 20 
 continuous predictors drawn from a multivariate normal distribution with mean zero and 
-unit variance. The five truly important predictors (X1--X5) will have true coefficients of $0.5/3$, $1/3$, $1.5/3$, $2/3$, and $2.5/3$, respectively, and the 
-remaining fifteen predictors (X6--X20) will have coefficients of zero. Errors will follow 
-a standard normal distribution. An exchangeable correlation structure will be used with $\rho \in \{0, 0.35, 0.70\}$ across two sample sizes ($N = 250$ and $N = 500$), yielding six simulation scenarios. Before the full simulation, a large dataset ($N = 10{,}000$) will be generated to verify correlation structure via a correlation table.
+unit variance. The five important predictors (X1--X5) will have coefficients of $0.5/3$, $1/3$, $1.5/3$, $2/3$, and $2.5/3$, respectively, and the 
+remaining predictors (X6--X20) will have coefficients of zero. Errors will follow 
+a standard normal distribution. An exchangeable correlation structure will be used with $\rho \in \{0, 0.35, 0.70\}$ across two sample sizes ($N = 250$ and $N = 500$). Before the full simulation, a large dataset ($N = 10{,}000$) will be generated to verify correlation structure via a correlation table.
 
-Backward elimination for all three criterion-based methods will use the \texttt{step()} function applied to a full \texttt{lm()} model. The tuning parameter \texttt{k} will be set to \texttt{qchisq(0.85, df = 1)} for p-value selection ($\alpha = 0.15$), 
+Backward elimination for all three criterion-based methods will use the \texttt{step()} function applied to a full \texttt{lm()} model. The tuning parameter \texttt{k} will be set to \texttt{qchisq(0.85, df = 1)} for p-value selection ($\alpha = 0.05$), 
 \texttt{k = 2} for AIC, and \texttt{k = log(n)} for BIC. LASSO and Elastic Net models 
 will be fit using \texttt{cv.glmnet()} with standardized predictors and 10-fold 
 cross-validation, with $\alpha = 1$ for LASSO and $\alpha = 0.5$ for Elastic Net. Two 
@@ -55,18 +54,10 @@ tuning parameters will be evaluated for each penalized method: \texttt{lambda.mi
 \texttt{lambda.1se}. Because \texttt{glmnet} 
 does not return standard errors, selected models will be refit under
 \texttt{lm()} to obtain unpenalized coefficient estimates, confidence intervals, and 
-p-values.  Any variable not selected is assigned a coefficient of zero and treated as non-significant.
-
-Each of the six scenarios will be replicated 10{,}000 times, using a fixed master seed per 
+p-values.  Any variable not selected is assigned a coefficient of zero and treated as non-significant. Each of the six scenarios will be replicated 10,000 times, using a fixed master seed per 
 scenario. Across replications, the 
-following will be summarized for each method: true positive rate (proportion of 
-simulations in which each of X1--X5 is selected), false positive rate (proportion of 
-simulations in which any of X6--X20 is selected), bias (mean estimated minus true 
-coefficient for X1--X5, using zero for non-selected variables), 95\% confidence interval 
-coverage for X1--X5 (conditional on selection), Type I error (proportion of null 
-predictors that are both selected and significant at $p < 0.05$ in the refitted model), 
-and Type II error (proportion of replications in which an important predictor is either 
-not selected or fails to reach $p < 0.05$ in the refitted model). Because inference after 
+following will be summarized for each method: true positive rate (selection of X1--X5), false positive rate (selection of X6--X20), bias (mean estimated minus true coefficient, using zero for non-selected variables), 95\% confidence interval 
+coverage for X1--X5 (conditional on selection), Type I error (null predictors selected and significant at $p < 0.05$), and Type II error (true predictors not selected or not significant). Because inference after 
 model selection is known to produce downward-biased standard errors and inflated Type I 
 error, these results will be interpreted descriptively.
 
